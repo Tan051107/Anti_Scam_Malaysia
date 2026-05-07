@@ -1,0 +1,21 @@
+# Dependency folders (The biggest culprits)
+**/node_modules/
+
+# Build output (Auto-generated files)
+**/dist/
+**/build/
+
+# Local environment variables (Security)
+**/.env
+**/.env.local
+
+# IDE settings
+.vscode/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python virtual environment
+**/venv/
