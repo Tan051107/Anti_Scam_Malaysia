@@ -19,3 +19,6 @@ yarn-error.log*
 
 # Python virtual environment
 **/venv/
+
+
+**/.history
