@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 """
 Analysis Bot Router
-Handles text and image analysis for scam detection.
+Handles text and image analysis for scam detection using AWS Bedrock.
 """
 
+import os
 import uuid
-import random
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from typing import Optional
+import json
+import base64
+import boto3
+from functools import lru_cache
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from dotenv import load_dotenv
 
 from models.schemas import (
     AnalysisChatRequest,
@@ -15,197 +19,139 @@ from models.schemas import (
     AnalysisUploadResponse,
 )
 
+load_dotenv()
+
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
+# ─────────────────────────────────────────────
+# Models
+# Chat  → Haiku 4.5  (fast, cost-efficient, text)
+# Upload → Sonnet 3.5 v2 (best vision on Bedrock)
+# ─────────────────────────────────────────────
+CHAT_MODEL_ID   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+UPLOAD_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 # ─────────────────────────────────────────────
-# Malaysia-specific scam keyword dictionaries
+# Bedrock client — singleton
 # ─────────────────────────────────────────────
 
-HIGH_RISK_KEYWORDS = [
-    # English
-    "transfer", "otp", "one time password", "bank account", "urgent",
-    "winner", "prize", "congratulations", "claim", "verify your account",
-    "suspended", "blocked", "arrest", "warrant", "police", "court",
-    "investment", "profit", "guaranteed return", "bitcoin", "crypto",
-    "forex", "love", "darling", "sweetheart", "send money",
-    "western union", "gift card", "itunes", "google play",
-    # Malay
-    "pindah", "wang", "akaun", "menang", "hadiah", "tahniah",
-    "tuntut", "segera", "tangkap", "waran", "mahkamah", "polis",
-    "pelaburan", "keuntungan", "dijamin", "hantar duit", "nombor ic",
-    "kata laluan", "pin", "cvv",
-]
+@lru_cache(maxsize=1)
+def get_bedrock_client():
+    for var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"):
+        if not os.getenv(var):
+            raise RuntimeError(f"Missing required environment variable: {var}")
+    return boto3.client(
+        service_name="bedrock-runtime",
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    )
 
-MEDIUM_RISK_KEYWORDS = [
-    # English
-    "click link", "verify", "confirm", "update", "expire", "limited time",
-    "act now", "free", "bonus", "reward", "parcel", "delivery", "package",
-    "customs", "duty", "fee", "refund", "rebate",
-    # Malay
-    "klik pautan", "sahkan", "kemaskini", "tamat tempoh", "percuma",
-    "bonus", "ganjaran", "bungkusan", "penghantaran", "kastam",
-    "bayaran", "bayar balik",
-]
+# ─────────────────────────────────────────────
+# In-memory chat history store  { session_id: [messages] }
+# Each message: {"role": "user"|"assistant", "content": ...}
+# ─────────────────────────────────────────────
+_history: dict[str, list] = {}
+MAX_TURNS = 20  # keep last 20 messages (10 user + 10 assistant)
 
-LOW_RISK_KEYWORDS = [
-    "hello", "hi", "help", "question", "ask", "info",
-    "helo", "hai", "tolong", "soalan", "tanya", "maklumat",
-]
+# ─────────────────────────────────────────────
+# System prompts
+# ─────────────────────────────────────────────
 
-SCAM_TYPES = {
-    "maybank": "Bank Impersonation (Maybank)",
-    "cimb": "Bank Impersonation (CIMB)",
-    "rhb": "Bank Impersonation (RHB)",
-    "public bank": "Bank Impersonation (Public Bank)",
-    "pdrm": "Authority Impersonation (PDRM)",
-    "lhdn": "Authority Impersonation (LHDN)",
-    "polis": "Authority Impersonation (PDRM)",
-    "shopee": "E-Commerce Scam (Shopee)",
-    "lazada": "E-Commerce Scam (Lazada)",
-    "macau": "Macau Scam",
-    "love": "Love Scam",
-    "bitcoin": "Investment Scam (Crypto)",
-    "forex": "Investment Scam (Forex)",
-    "pelaburan": "Investment Scam",
-    "investment": "Investment Scam",
-    "parcel": "Parcel Delivery Scam",
-    "bungkusan": "Parcel Delivery Scam",
-    "job": "Job Scam",
-    "kerja": "Job Scam",
-}
+CHAT_SYSTEM_PROMPT = """You are ScamShield, an expert anti-scam analyst specialising in Malaysia.
+Your job is to analyse messages submitted by Malaysian users and determine whether they are scams.
 
-INDICATOR_TEMPLATES = {
-    "otp": "Requesting OTP/one-time password — legitimate banks never ask for this",
-    "transfer": "Requesting money transfer to unknown account",
-    "pdrm": "Impersonating PDRM (Royal Malaysia Police)",
-    "lhdn": "Impersonating LHDN (Inland Revenue Board)",
-    "maybank": "Impersonating Maybank — verify via official hotline 1-300-88-6688",
-    "cimb": "Impersonating CIMB — verify via official hotline 1-300-880-900",
-    "prize": "Unsolicited prize/lottery claim — classic advance-fee fraud",
-    "winner": "Claiming you are a winner without prior participation",
-    "urgent": "Creating false urgency to pressure immediate action",
-    "investment": "Promising guaranteed high returns — hallmark of investment scam",
-    "bitcoin": "Cryptocurrency investment with guaranteed profits — likely scam",
-    "love": "Romantic interest requesting financial assistance",
-    "parcel": "Parcel held at customs requiring payment — common delivery scam",
-    "warrant": "Threatening arrest warrant to coerce compliance",
-    "ic": "Requesting IC (identity card) number — identity theft risk",
-    "cvv": "Requesting CVV/card security code — never share this",
-}
+Consider these Malaysia-specific scam types:
+- Bank impersonation: Maybank (hotline 1-300-88-6688), CIMB (1-300-880-900), RHB, Public Bank
+- Authority impersonation: PDRM (Royal Malaysia Police), LHDN (Inland Revenue Board), MCMC
+- E-commerce scams: Shopee, Lazada parcel/delivery scams
+- Macau scam (phone call impersonating authorities)
+- Love scam (romantic interest requesting money)
+- Investment scam (guaranteed returns, forex, crypto, MLM)
+- Job scam (too-good-to-be-true offers, upfront fees)
+- Phishing links (bit.ly, tinyurl, suspicious domains)
 
+Rules:
+- Respond in BOTH English and Malay (Bahasa Malaysia)
+- Be direct and clear about the risk level
+- Always recommend official reporting channels when risk is HIGH or CRITICAL:
+  CCID Polis: 03-2610 5000 | BNMTELELINK: 1-300-88-5465 | MCMC: 1-800-188-030
 
-def analyze_text(text: str):
-    """
-    Analyze input text for scam indicators.
-    Returns risk_score, risk_level, indicators, confidence, detected_type.
-    """
-    text_lower = text.lower()
-    score = 0
-    indicators = []
-    detected_type = "Unknown Scam Pattern"
+You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
+The JSON must have exactly these fields:
+{
+  "reply": "<bilingual analysis and advice as a readable string>",
+  "risk_score": <integer 0-100>,
+  "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
+  "indicators": ["<indicator 1>", "<indicator 2>"],
+  "confidence": <integer 0-100>
+}"""
 
-    # Check high-risk keywords
-    high_hits = [kw for kw in HIGH_RISK_KEYWORDS if kw in text_lower]
-    score += len(high_hits) * 20
+UPLOAD_SYSTEM_PROMPT = """You are ScamShield, an expert anti-scam analyst specialising in Malaysia.
+Your job is to analyse images submitted by Malaysian users — these may be screenshots of messages,
+fake bank notices, suspicious QR codes, phishing emails, or fraudulent documents.
 
-    # Check medium-risk keywords
-    medium_hits = [kw for kw in MEDIUM_RISK_KEYWORDS if kw in text_lower]
-    score += len(medium_hits) * 10
+Consider these Malaysia-specific scam types:
+- Fake bank notices: Maybank, CIMB, RHB, Public Bank
+- Fake authority letters: PDRM, LHDN, MCMC, court summons
+- Fake e-commerce notifications: Shopee, Lazada
+- Phishing pages or QR codes
+- Fake job offers or investment schemes
+- Counterfeit receipts or transfer confirmations
 
-    # Build indicators list
-    for key, indicator_text in INDICATOR_TEMPLATES.items():
-        if key in text_lower:
-            indicators.append(indicator_text)
+Rules:
+- Respond in BOTH English and Malay (Bahasa Malaysia)
+- Describe what you see in the image and why it is or isn't suspicious
+- Always recommend official reporting channels when risk is HIGH or CRITICAL:
+  CCID Polis: 03-2610 5000 | BNMTELELINK: 1-300-88-5465
 
-    # Detect scam type
-    for keyword, scam_type in SCAM_TYPES.items():
-        if keyword in text_lower:
-            detected_type = scam_type
-            break
-
-    # URL detection
-    if "http" in text_lower or "bit.ly" in text_lower or "tinyurl" in text_lower:
-        score += 25
-        indicators.append("Suspicious shortened/unverified URL detected")
-
-    # Phone number pattern (Malaysian)
-    import re
-    if re.search(r"(\+?60|0)[1-9]\d{7,9}", text):
-        score += 5
-        indicators.append("Malaysian phone number detected — verify caller identity independently")
-
-    # Cap score at 100
-    score = min(score, 100)
-
-    # Add base noise for realism
-    if score == 0 and len(text) > 10:
-        score = random.randint(5, 15)
-
-    # Determine risk level
-    if score <= 30:
-        risk_level = "LOW"
-    elif score <= 60:
-        risk_level = "MEDIUM"
-    elif score <= 80:
-        risk_level = "HIGH"
-    else:
-        risk_level = "CRITICAL"
-
-    # Confidence based on number of indicators found
-    confidence = min(60 + len(indicators) * 8 + len(high_hits) * 5, 98)
-    if score < 15:
-        confidence = random.randint(40, 65)
-
-    return score, risk_level, indicators, confidence, detected_type
+You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
+The JSON must have exactly these fields:
+{
+  "reply": "<bilingual analysis and advice as a readable string>",
+  "risk_score": <integer 0-100>,
+  "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
+  "indicators": ["<indicator 1>", "<indicator 2>"],
+  "confidence": <integer 0-100>
+}"""
 
 
-def build_reply(risk_level: str, indicators: list, detected_type: str, message: str) -> str:
-    """Build a contextual bot reply based on analysis results."""
+# ─────────────────────────────────────────────
+# Helper: invoke Bedrock and parse JSON response
+# ─────────────────────────────────────────────
 
-    if risk_level == "CRITICAL":
-        return (
-            f"🚨 **AMARAN KRITIKAL / CRITICAL WARNING** 🚨\n\n"
-            f"Analisis saya menunjukkan ini adalah **{detected_type}** dengan risiko yang sangat tinggi!\n\n"
-            f"My analysis indicates this is a **{detected_type}** with extremely high risk!\n\n"
-            f"Saya mengesan {len(indicators)} petanda penipuan. Jangan ikut arahan mereka. "
-            f"I detected {len(indicators)} scam indicator(s). Do NOT comply with their instructions.\n\n"
-            f"**Tindakan segera / Immediate action:**\n"
-            f"• Hentikan semua komunikasi / Stop all communication\n"
-            f"• Laporkan ke CCID Polis: 03-2610 5000\n"
-            f"• Hubungi bank anda segera jika ada transaksi / Contact your bank immediately if any transaction occurred\n"
-            f"• Laporkan ke BNMTELELINK: 1-300-88-5465"
-        )
-    elif risk_level == "HIGH":
-        return (
-            f"⚠️ **RISIKO TINGGI / HIGH RISK DETECTED**\n\n"
-            f"Mesej ini menunjukkan ciri-ciri **{detected_type}**.\n"
-            f"This message shows characteristics of **{detected_type}**.\n\n"
-            f"Saya mengesan {len(indicators)} petanda yang membimbangkan. "
-            f"I found {len(indicators)} concerning indicator(s).\n\n"
-            f"**Nasihat / Advice:** Jangan berkongsi maklumat peribadi atau membuat sebarang pembayaran. "
-            f"Do not share personal information or make any payments. Verify through official channels first."
-        )
-    elif risk_level == "MEDIUM":
-        return (
-            f"🔶 **RISIKO SEDERHANA / MEDIUM RISK**\n\n"
-            f"Terdapat beberapa petanda yang mencurigakan dalam mesej ini. "
-            f"There are some suspicious indicators in this message.\n\n"
-            f"Kemungkinan berkaitan dengan: **{detected_type}**.\n"
-            f"Possibly related to: **{detected_type}**.\n\n"
-            f"**Syor / Recommendation:** Sahkan identiti penghantar melalui saluran rasmi sebelum mengambil sebarang tindakan. "
-            f"Verify the sender's identity through official channels before taking any action."
-        )
-    else:
-        return (
-            f"✅ **RISIKO RENDAH / LOW RISK**\n\n"
-            f"Mesej ini tidak menunjukkan petanda penipuan yang ketara pada masa ini. "
-            f"This message does not show significant scam indicators at this time.\n\n"
-            f"Walau bagaimanapun, sentiasa berhati-hati. Jika anda rasa ada sesuatu yang tidak kena, percayai naluri anda. "
-            f"However, always stay vigilant. If something feels off, trust your instincts.\n\n"
-            f"💡 Tip: Jangan sekali-kali berkongsi OTP, nombor IC, atau maklumat bank dengan sesiapa. "
-            f"Never share OTP, IC number, or banking details with anyone."
-        )
+def _invoke(model_id: str, system_prompt: str, messages: list, max_tokens: int = 1024) -> dict:
+    """Call Bedrock and return the parsed JSON dict from Claude's reply."""
+    client = get_bedrock_client()
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": max_tokens,
+        "system": system_prompt,
+        "messages": messages,
+    })
+    try:
+        response = client.invoke_model(modelId=model_id, body=body)
+    except client.exceptions.AccessDeniedException:
+        raise HTTPException(status_code=502, detail="Bedrock access denied — check IAM permissions and model access.")
+    except client.exceptions.ValidationException as e:
+        raise HTTPException(status_code=502, detail=f"Bedrock validation error — check model ID or payload: {e}")
+    except Exception:
+        raise HTTPException(status_code=502, detail="Bedrock service error — please try again.")
+
+    raw = json.loads(response["body"].read())
+    text = raw["content"][0]["text"].strip()
+
+    # Strip accidental markdown code fences if Claude adds them
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="Model returned an unparseable response. Please try again.")
 
 
 # ─────────────────────────────────────────────
@@ -215,138 +161,111 @@ def build_reply(risk_level: str, indicators: list, detected_type: str, message: 
 @router.post("/chat", response_model=AnalysisChatResponse)
 async def analysis_chat(request: AnalysisChatRequest):
     """
-    Analyze a text message for scam indicators.
-    Accepts: free text, URLs, phone numbers, email content, suspicious messages.
+    Analyse a text message for scam indicators using Claude Haiku 4.5.
+    Maintains per-session conversation history.
     """
-
-    # ============================================================
-    # TODO: WIRE BEDROCK HERE
-    # Replace this mock response with actual AWS Bedrock API call
-    # Model: Use BEDROCK_MODEL_ID from .env
-    # boto3 client: bedrock_runtime.invoke_model(...)
-    #
-    # Suggested prompt structure:
-    # system_prompt = """You are an expert anti-scam analyst for Malaysia.
-    # Analyze the following message for scam indicators specific to Malaysia.
-    # Consider: Maybank/CIMB/RHB impersonation, PDRM/LHDN authority scams,
-    # Shopee/Lazada parcel scams, Macau scam, love scam, investment scams.
-    # Respond in both English and Malay. Return JSON with:
-    # reply, risk_score (0-100), risk_level (LOW/MEDIUM/HIGH/CRITICAL),
-    # indicators (list), confidence (0-100)"""
-    #
-    # body = json.dumps({
-    #     "anthropic_version": "bedrock-2023-05-31",
-    #     "max_tokens": 1024,
-    #     "system": system_prompt,
-    #     "messages": [{"role": "user", "content": request.message}]
-    # })
-    # response = bedrock_runtime.invoke_model(
-    #     modelId=os.getenv("BEDROCK_MODEL_ID"),
-    #     body=body
-    # )
-    # result = json.loads(response["body"].read())
-    # ============================================================
-
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    score, risk_level, indicators, confidence, detected_type = analyze_text(request.message)
-    reply = build_reply(risk_level, indicators, detected_type, request.message)
-
     session_id = request.session_id or str(uuid.uuid4())
 
+    # Retrieve or initialise history for this session
+    history = _history.setdefault(session_id, [])
+
+    # Build the new user turn
+    new_user_turn = {"role": "user", "content": request.message}
+
+    # Assemble messages: history + new turn
+    messages = history + [new_user_turn]
+
+    # Call Bedrock
+    result = _invoke(
+        model_id=CHAT_MODEL_ID,
+        system_prompt=CHAT_SYSTEM_PROMPT,
+        messages=messages,
+    )
+
+    # Append user turn and assistant reply to history
+    history.append(new_user_turn)
+    history.append({"role": "assistant", "content": result.get("reply", "")})
+
+    # Enforce rolling window: keep last MAX_TURNS messages
+    if len(history) > MAX_TURNS:
+        _history[session_id] = history[-MAX_TURNS:]
+
+    indicators = result.get("indicators") or ["No specific scam indicators detected"]
+
     return AnalysisChatResponse(
-        reply=reply,
-        risk_score=score,
-        risk_level=risk_level,
-        indicators=indicators if indicators else ["No specific scam indicators detected"],
-        confidence=confidence,
+        reply=result.get("reply", ""),
+        risk_score=int(result.get("risk_score", 0)),
+        risk_level=result.get("risk_level", "LOW"),
+        indicators=indicators,
+        confidence=int(result.get("confidence", 0)),
         session_id=session_id,
     )
+
+
+@router.delete("/chat/history/{session_id}", status_code=204)
+async def clear_chat_history(session_id: str):
+    """Clear conversation history for a given session."""
+    if session_id not in _history:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+    del _history[session_id]
 
 
 @router.post("/upload", response_model=AnalysisUploadResponse)
 async def analysis_upload(
     file: UploadFile = File(...),
-    session_id: Optional[str] = Form(None),
 ):
     """
-    Analyze an uploaded image for scam indicators.
+    Analyse an uploaded image for scam indicators using Claude Sonnet 3.5 v2 (vision).
     Supports: screenshots of messages, fake bank notices, suspicious QR codes.
     """
-
-    # ============================================================
-    # TODO: WIRE BEDROCK HERE
-    # Replace this mock response with actual AWS Bedrock API call
-    # Model: Use BEDROCK_MODEL_ID from .env (Claude 3 supports vision)
-    #
-    # Steps:
-    # 1. Read image bytes: image_data = await file.read()
-    # 2. Encode to base64: import base64; b64 = base64.b64encode(image_data).decode()
-    # 3. Detect media type from file.content_type
-    # 4. Call Bedrock with vision payload:
-    #
-    # body = json.dumps({
-    #     "anthropic_version": "bedrock-2023-05-31",
-    #     "max_tokens": 1024,
-    #     "messages": [{
-    #         "role": "user",
-    #         "content": [
-    #             {
-    #                 "type": "image",
-    #                 "source": {
-    #                     "type": "base64",
-    #                     "media_type": file.content_type,
-    #                     "data": b64,
-    #                 }
-    #             },
-    #             {
-    #                 "type": "text",
-    #                 "text": "Analyze this image for scam indicators in Malaysian context..."
-    #             }
-    #         ]
-    #     }]
-    # })
-    # response = bedrock_runtime.invoke_model(modelId=os.getenv("BEDROCK_MODEL_ID"), body=body)
-    # ============================================================
-
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
     if file.content_type not in allowed_types:
-        raise HTTPException(status_code=400, detail="Only image files are supported (JPEG, PNG, GIF, WEBP)")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{file.content_type}'. Allowed: JPEG, PNG, GIF, WEBP."
+        )
 
-    # Mock image analysis — simulate finding scam content in image
-    mock_score = random.randint(45, 95)
-    mock_indicators = [
-        "Image contains text requesting urgent action",
-        "Suspicious bank logo detected — may be counterfeit",
-        "QR code or link detected in image — do not scan without verification",
-        "Official-looking letterhead that may be forged",
-    ]
-    selected_indicators = random.sample(mock_indicators, k=random.randint(1, 3))
+    image_data = await file.read()
+    b64 = base64.b64encode(image_data).decode("utf-8")
 
-    if mock_score <= 60:
-        risk_level = "MEDIUM"
-    elif mock_score <= 80:
-        risk_level = "HIGH"
-    else:
-        risk_level = "CRITICAL"
+    messages = [{
+        "role": "user",
+        "content": [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": file.content_type,
+                    "data": b64,
+                },
+            },
+            {
+                "type": "text",
+                "text": (
+                    "Please analyse this image for scam indicators in the Malaysian context. "
+                    "Describe what you see and assess whether it is a scam."
+                ),
+            },
+        ],
+    }]
 
-    reply = (
-        f"🖼️ **Analisis Imej / Image Analysis**\n\n"
-        f"Saya telah menganalisis imej yang anda hantar. "
-        f"I have analyzed the uploaded image.\n\n"
-        f"**Penemuan / Findings:** Imej ini menunjukkan ciri-ciri yang mencurigakan. "
-        f"This image shows suspicious characteristics.\n\n"
-        f"Skor risiko: **{mock_score}/100** — Tahap: **{risk_level}**\n\n"
-        f"⚠️ Jangan ikut arahan dalam imej ini tanpa mengesahkan melalui saluran rasmi. "
-        f"Do not follow instructions in this image without verifying through official channels."
+    result = _invoke(
+        model_id=UPLOAD_MODEL_ID,
+        system_prompt=UPLOAD_SYSTEM_PROMPT,
+        messages=messages,
+        max_tokens=1536,
     )
 
+    indicators = result.get("indicators") or ["No specific scam indicators detected"]
+
     return AnalysisUploadResponse(
-        reply=reply,
-        risk_score=mock_score,
-        risk_level=risk_level,
-        indicators=selected_indicators,
-        confidence=random.randint(70, 90),
+        reply=result.get("reply", ""),
+        risk_score=int(result.get("risk_score", 0)),
+        risk_level=result.get("risk_level", "LOW"),
+        indicators=indicators,
+        confidence=int(result.get("confidence", 0)),
         filename=file.filename,
     )

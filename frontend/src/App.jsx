@@ -20,7 +20,7 @@ export default function App() {
       </main>
       <footer className="bg-gray-900 text-gray-400 text-center py-4 text-sm">
         <p>
-          © 2024 Anti-Scam Malaysia &nbsp;|&nbsp; Untuk kecemasan, hubungi{' '}
+          © 2026 Anti-Scam Malaysia &nbsp;|&nbsp; Untuk kecemasan, hubungi{' '}
           <span className="text-yellow-400 font-semibold">997</span> atau CCID Polis{' '}
           <span className="text-yellow-400 font-semibold">03-2610 5000</span>
         </p>

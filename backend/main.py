@@ -59,7 +59,7 @@ async def health_check():
     bedrock_configured = bool(
         os.getenv("AWS_ACCESS_KEY_ID") and
         os.getenv("AWS_SECRET_ACCESS_KEY") and
-        os.getenv("BEDROCK_MODEL_ID")
+        os.getenv("AWS_REGION")
     )
 
     return HealthResponse(
@@ -67,37 +67,6 @@ async def health_check():
         version="1.0.0",
         bedrock_configured=bedrock_configured,
     )
-
-
-# ─────────────────────────────────────────────
-# AWS Bedrock Client (initialized when credentials are present)
-# ─────────────────────────────────────────────
-
-# ============================================================
-# TODO: WIRE BEDROCK HERE
-# Uncomment and configure the Bedrock client when AWS credentials are ready.
-#
-# import boto3
-# import json
-#
-# bedrock_runtime = None
-#
-# def get_bedrock_client():
-#     global bedrock_runtime
-#     if bedrock_runtime is None:
-#         bedrock_runtime = boto3.client(
-#             service_name="bedrock-runtime",
-#             region_name=os.getenv("AWS_REGION", "ap-southeast-1"),
-#             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-#             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-#         )
-#     return bedrock_runtime
-#
-# Then pass get_bedrock_client() into your router functions via dependency injection:
-# from fastapi import Depends
-# def analysis_chat(request: AnalysisChatRequest, bedrock=Depends(get_bedrock_client)):
-#     ...
-# ============================================================
 
 
 # ─────────────────────────────────────────────

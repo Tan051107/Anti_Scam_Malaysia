@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react'
-import { FileText, Download, Printer, AlertCircle, CheckCircle } from 'lucide-react'
+import React, { useState } from 'react'
+import { FileText, Download, AlertCircle, CheckCircle } from 'lucide-react'
 
 const SCAM_TYPES = [
   'Macau Scam / Penipuan Macau',
@@ -55,7 +55,7 @@ export default function ReportSimulator() {
   const [generated, setGenerated] = useState(false)
   const [reportData, setReportData] = useState(null)
   const [errors, setErrors] = useState({})
-  const reportRef = useRef(null)
+  const [exporting, setExporting] = useState(false)
 
   const validate = () => {
     const e = {}
@@ -87,10 +87,31 @@ export default function ReportSimulator() {
     }
     setReportData(report)
     setGenerated(true)
-    setTimeout(() => reportRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
-  const handlePrint = () => window.print()
+  const handleExportPdf = async () => {
+    if (!reportData) return
+    setExporting(true)
+    try {
+      const response = await fetch('/api/simulator/report/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reportData),
+      })
+      if (!response.ok) throw new Error('Export failed')
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `scam-report-${reportData.reportId}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert('Failed to export PDF. Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const handleReset = () => {
     setForm(initialForm)
@@ -354,7 +375,7 @@ export default function ReportSimulator() {
 
       {/* Generated Report */}
       {generated && reportData && (
-        <div ref={reportRef} className="bg-white border-2 border-gray-300 rounded-2xl shadow-lg overflow-hidden print:shadow-none">
+        <div className="bg-white border-2 border-gray-300 rounded-2xl shadow-lg overflow-hidden">
           {/* Report header */}
           <div className="bg-[#003893] text-white p-6">
             <div className="flex items-start justify-between">
@@ -454,11 +475,12 @@ export default function ReportSimulator() {
             {/* Action buttons */}
             <div className="flex gap-3 print:hidden">
               <button
-                onClick={handlePrint}
-                className="flex-1 bg-[#003893] hover:bg-blue-800 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                onClick={handleExportPdf}
+                disabled={exporting}
+                className="flex-1 bg-[#003893] hover:bg-blue-800 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
               >
-                <Printer className="w-5 h-5" />
-                Print / Cetak
+                <Download className="w-5 h-5" />
+                {exporting ? 'Exporting...' : 'Export PDF / Eksport PDF'}
               </button>
               <button
                 onClick={handleReset}

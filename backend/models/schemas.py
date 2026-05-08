@@ -69,6 +69,28 @@ class SimulatorResetResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────
+# Report Generator Schemas
+# ─────────────────────────────────────────────
+
+class ReportExportRequest(BaseModel):
+    reportId: str
+    generatedAt: str
+    incidentDate: str
+    scamType: str
+    description: str
+    contactMethod: str
+    scammerContact: Optional[str] = None
+    bankAccount: Optional[str] = None
+    amountLost: Optional[str] = None
+    currency: str = "MYR"
+    reportedToPolis: bool = False
+    reportedToBNM: bool = False
+    victimName: Optional[str] = None
+    victimIC: Optional[str] = None
+    victimPhone: Optional[str] = None
+
+
+# ─────────────────────────────────────────────
 # Health Check
 # ─────────────────────────────────────────────
 
