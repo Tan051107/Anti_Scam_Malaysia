@@ -4,7 +4,7 @@ import api from '../services/api'
 const AuthContext = createContext()
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null)   // { id, email, display_name, token }
+  const [user, setUser]       = useState(null)   // { id, email, username, full_name, access_token, refresh_token }
   const [loading, setLoading] = useState(true)
 
   // Restore session from localStorage on mount
@@ -14,8 +14,7 @@ export function AuthProvider({ children }) {
       try {
         const parsed = JSON.parse(stored)
         setUser(parsed)
-        // Attach token to all future axios requests
-        api.defaults.headers.common['Authorization'] = `Bearer ${parsed.token}`
+        api.defaults.headers.common['Authorization'] = `Bearer ${parsed.access_token}`
       } catch (_) {
         localStorage.removeItem('antiscam_user')
       }
@@ -23,22 +22,42 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }, [])
 
-  const login = async (email, password) => {
-    const res = await api.post('/auth/login', { email, password })
-    const userData = res.data
+  const _saveSession = async (tokens) => {
+    // Attach token then fetch profile
+    api.defaults.headers.common['Authorization'] = `Bearer ${tokens.access_token}`
+    const profileRes = await api.get('/auth/me')
+    const userData = {
+      ...profileRes.data,
+      display_name: profileRes.data.full_name || profileRes.data.username,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+    }
     setUser(userData)
     localStorage.setItem('antiscam_user', JSON.stringify(userData))
-    api.defaults.headers.common['Authorization'] = `Bearer ${userData.token}`
     return userData
   }
 
+  const login = async (email, password) => {
+    // Backend expects form data for OAuth2PasswordRequestForm
+    const formData = new URLSearchParams()
+    formData.append('username', email)
+    formData.append('password', password)
+    const res = await api.post('/auth/login', formData, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    })
+    return await _saveSession(res.data)
+  }
+
   const signup = async (email, password, display_name) => {
-    const res = await api.post('/auth/signup', { email, password, display_name })
-    const userData = res.data
-    setUser(userData)
-    localStorage.setItem('antiscam_user', JSON.stringify(userData))
-    api.defaults.headers.common['Authorization'] = `Bearer ${userData.token}`
-    return userData
+    // Split display_name into username (no spaces, lowercase)
+    const username = display_name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+    const res = await api.post('/auth/signup', {
+      email,
+      password,
+      username,
+      full_name: display_name,
+    })
+    return await _saveSession(res.data)
   }
 
   const logout = () => {

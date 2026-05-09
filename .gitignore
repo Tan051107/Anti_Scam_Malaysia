@@ -46,3 +46,4 @@ backend/test_bedrock.py
 
 # ─── Misc ────────────────────────────────────────────────────
 **/.history
+global-bundle.pem

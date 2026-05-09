@@ -24,6 +24,7 @@ export default function AnalysisBot() {
   const [attachedFile, setAttachedFile] = useState(null)
   const [error, setError]             = useState(null)
   const [lastMessage, setLastMessage] = useState('')
+  const [lastImageFile, setLastImageFile] = useState(null)
   const [showShare, setShowShare]     = useState(false)
 
   const messagesEndRef = useRef(null)
@@ -33,9 +34,9 @@ export default function AnalysisBot() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const addMessage = (text, isBot) => {
+  const addMessage = (text, isBot, imageUrl = null) => {
     const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    setMessages((prev) => [...prev, { id: Date.now() + Math.random(), text, isBot, timestamp: ts }])
+    setMessages((prev) => [...prev, { id: Date.now() + Math.random(), text, isBot, timestamp: ts, imageUrl }])
   }
 
   const handleSend = async () => {
@@ -46,7 +47,8 @@ export default function AnalysisBot() {
     setError(null)
 
     if (attachedFile) {
-      addMessage(`📎 [Image: ${attachedFile.name}]`, false)
+      const previewUrl = URL.createObjectURL(attachedFile)
+      addMessage(`📎 ${attachedFile.name}`, false, previewUrl)
       const file = attachedFile
       setAttachedFile(null)
       setLoading(true)
@@ -55,6 +57,7 @@ export default function AnalysisBot() {
         if (data.session_id) setSessionId(data.session_id)
         setRiskData({ score: data.risk_score, level: data.risk_level, confidence: data.confidence, indicators: data.indicators })
         setLastMessage(`[Image: ${file.name}]`)
+        setLastImageFile(file)
         addMessage(data.reply, true)
       } catch {
         setError('Failed to upload image. Please ensure the backend is running.')
@@ -66,6 +69,7 @@ export default function AnalysisBot() {
 
     addMessage(trimmed, false)
     setLastMessage(trimmed)
+    setLastImageFile(null)
     setInput('')
     setLoading(true)
 
@@ -124,7 +128,7 @@ export default function AnalysisBot() {
         <div className="flex-1 flex flex-col min-w-0 border-r border-gray-200">
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
             {messages.map((msg) => (
-              <ChatBubble key={msg.id} message={msg.text} isBot={msg.isBot} timestamp={msg.timestamp} />
+              <ChatBubble key={msg.id} message={msg.text} isBot={msg.isBot} timestamp={msg.timestamp} imageUrl={msg.imageUrl} />
             ))}
             {loading && (
               <div className="flex items-center gap-2 text-gray-400 text-sm">
@@ -143,9 +147,16 @@ export default function AnalysisBot() {
           )}
 
           {attachedFile && (
-            <div className="mx-4 mb-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs px-3 py-2 rounded-lg flex items-center justify-between">
-              <span>📎 {attachedFile.name}</span>
-              <button onClick={() => setAttachedFile(null)}><X className="w-4 h-4" /></button>
+            <div className="mx-4 mb-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs px-3 py-2 rounded-lg flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <img
+                  src={URL.createObjectURL(attachedFile)}
+                  alt="preview"
+                  className="w-10 h-10 object-cover rounded-lg border border-blue-200 flex-shrink-0"
+                />
+                <span className="truncate">{attachedFile.name}</span>
+              </div>
+              <button onClick={() => setAttachedFile(null)} className="flex-shrink-0"><X className="w-4 h-4" /></button>
             </div>
           )}
 
@@ -263,6 +274,7 @@ export default function AnalysisBot() {
         <ShareModal
           analysisData={{
             lastMessage,
+            imageFile: lastImageFile,
             risk_score: riskData.score,
             risk_level: riskData.level,
             indicators: riskData.indicators,

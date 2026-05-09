@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { X, Share2, Loader2, CheckCircle, Lock } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { shareToCommmunity } from '../services/api'
+import { createCommunityPost } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 
@@ -14,19 +14,30 @@ export default function ShareModal({ analysisData, onClose }) {
   const [loading, setLoading]     = useState(false)
   const [success, setSuccess]     = useState(false)
   const [error, setError]         = useState(null)
+  // Include the image that was analysed if available
+  const includeImage = !!analysisData.imageFile
 
   const handleShare = async () => {
     setError(null)
     setLoading(true)
     try {
-      await shareToCommmunity({
-        original_message: analysisData.lastMessage,
-        risk_score: analysisData.risk_score,
-        risk_level: analysisData.risk_level,
-        indicators: analysisData.indicators,
-        note: note.trim() || null,
-        anonymous,
-      })
+      const formData = new FormData()
+      // When sharing an image, don't send original_message —
+      // the backend will extract it from the image via Bedrock
+      if (!includeImage) {
+        formData.append('original_message', analysisData.lastMessage || '')
+        formData.append('caption', analysisData.lastMessage?.slice(0, 200) || '')
+      }
+      formData.append('risk_score', analysisData.risk_score)
+      formData.append('risk_level', analysisData.risk_level)
+      formData.append('indicators', JSON.stringify(analysisData.indicators || []))
+      formData.append('scam_type', analysisData.risk_level)
+      if (note.trim()) formData.append('note', note.trim())
+      if (includeImage && analysisData.imageFile) {
+        formData.append('image', analysisData.imageFile)
+      }
+
+      await createCommunityPost(formData)
       setSuccess(true)
       setTimeout(onClose, 1800)
     } catch (err) {
@@ -92,7 +103,20 @@ export default function ShareModal({ analysisData, onClose }) {
                     {analysisData.risk_level} — {analysisData.risk_score}%
                   </span>
                 </div>
-                <p className="text-xs text-gray-600 line-clamp-2">{analysisData.lastMessage}</p>
+                {includeImage ? (
+                  <div className="mt-2">
+                    <img
+                      src={URL.createObjectURL(analysisData.imageFile)}
+                      alt="Analysed scam image"
+                      className="w-full max-h-32 object-cover rounded-lg border border-gray-200"
+                    />
+                    <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                      🤖 Suspicious message will be auto-extracted from this image
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-600 line-clamp-2">{analysisData.lastMessage}</p>
+                )}
               </div>
 
               {/* Note */}
@@ -134,7 +158,9 @@ export default function ShareModal({ analysisData, onClose }) {
                   className="flex-1 bg-brand-primary hover:bg-blue-800 disabled:bg-gray-300 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
                 >
                   {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {t('share_submit')}
+                  {loading
+                    ? (includeImage ? 'Extracting & sharing...' : 'Sharing...')
+                    : t('share_submit')}
                 </button>
                 <button
                   onClick={onClose}

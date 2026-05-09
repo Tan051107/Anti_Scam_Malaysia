@@ -8,7 +8,7 @@ import { Bot, User } from 'lucide-react'
  *   isBot    : boolean — true = left-aligned bot bubble, false = right-aligned user bubble
  *   timestamp: string  — optional time label
  */
-export default function ChatBubble({ message, isBot, timestamp }) {
+export default function ChatBubble({ message, isBot, timestamp, imageUrl }) {
   // Convert **bold** markdown to <strong> and \n to <br>
   const formatText = (text) => {
     if (!text) return ''
@@ -58,6 +58,13 @@ export default function ChatBubble({ message, isBot, timestamp }) {
       </div>
       <div>
         <div className="bg-brand-primary rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm">
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt="Uploaded scam screenshot"
+              className="w-full max-w-xs max-h-48 object-cover rounded-xl mb-2 border border-blue-300"
+            />
+          )}
           <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">
             {message}
           </p>

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, AlertTriangle, Loader2, RefreshCw, Lock, Trash2 } from 'lucide-react'
+import { Users, AlertTriangle, Loader2, RefreshCw, Lock, Trash2, X, ZoomIn } from 'lucide-react'
 import { getCommunityPosts, deletePost } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 const RISK_COLORS = {
   LOW:      'bg-green-100 text-green-800 border-green-200',
@@ -21,17 +22,51 @@ const RISK_BAR = {
 
 function timeAgo(isoString, lang) {
   const diff = Math.floor((Date.now() - new Date(isoString)) / 1000)
-  if (diff < 60)  return lang === 'ms' ? `${diff} saat yang lalu` : `${diff}s ago`
+  if (diff < 60)   return lang === 'ms' ? `${diff} saat yang lalu`              : `${diff}s ago`
   if (diff < 3600) return lang === 'ms' ? `${Math.floor(diff/60)} minit yang lalu` : `${Math.floor(diff/60)}m ago`
   if (diff < 86400) return lang === 'ms' ? `${Math.floor(diff/3600)} jam yang lalu` : `${Math.floor(diff/3600)}h ago`
   return lang === 'ms' ? `${Math.floor(diff/86400)} hari yang lalu` : `${Math.floor(diff/86400)}d ago`
 }
 
-function PostCard({ post, onDelete, currentUser, lang, t }) {
-  const [deleting, setDeleting] = useState(false)
+// ─── Lightbox ────────────────────────────────────────────────
+function Lightbox({ src, alt, onClose }) {
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
 
-  const handleDelete = async () => {
-    if (!window.confirm('Delete this post?')) return
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <button
+        className="absolute top-4 right-4 text-white bg-black/50 hover:bg-black/70 rounded-full p-2 transition-colors"
+        onClick={onClose}
+        aria-label="Close"
+      >
+        <X className="w-6 h-6" />
+      </button>
+      <img
+        src={src}
+        alt={alt}
+        className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  )
+}
+
+// ─── Post Card ───────────────────────────────────────────────
+function PostCard({ post, onDelete, currentUser, lang, t }) {
+  const [deleting, setDeleting]       = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState(null)
+  const [showConfirm, setShowConfirm] = useState(false)
+
+  const handleDeleteConfirmed = async () => {
+    setShowConfirm(false)
     setDeleting(true)
     try {
       await deletePost(post.id)
@@ -41,74 +76,117 @@ function PostCard({ post, onDelete, currentUser, lang, t }) {
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-shadow p-5">
-      {/* Header row */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-brand-primary flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-            {post.author_name[0].toUpperCase()}
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-gray-800">{post.author_name}</p>
-            <p className="text-xs text-gray-400">{timeAgo(post.created_at, lang)}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${RISK_COLORS[post.risk_level] || RISK_COLORS.HIGH}`}>
-            {post.risk_level} {post.risk_score}%
-          </span>
-          {currentUser && (
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="text-gray-300 hover:text-red-500 transition-colors"
-              title="Delete post"
-            >
-              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Risk bar */}
-      <div className="w-full bg-gray-100 rounded-full h-1.5 mb-3">
-        <div
-          className={`h-1.5 rounded-full ${RISK_BAR[post.risk_level] || RISK_BAR.HIGH}`}
-          style={{ width: `${post.risk_score}%` }}
-        />
-      </div>
-
-      {/* Message preview */}
-      <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 mb-3">
-        <p className="text-xs text-gray-500 mb-0.5 font-medium">Suspicious content:</p>
-        <p className="text-sm text-gray-700 line-clamp-3 break-words">{post.original_message}</p>
-      </div>
-
-      {/* User note */}
-      {post.note && (
-        <p className="text-sm text-gray-600 italic mb-3 border-l-2 border-blue-300 pl-3">
-          "{post.note}"
-        </p>
+    <>
+      {lightboxSrc && (
+        <Lightbox src={lightboxSrc} alt="Scam screenshot" onClose={() => setLightboxSrc(null)} />
       )}
 
-      {/* Indicators */}
-      {post.indicators?.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {post.indicators.slice(0, 4).map((ind, i) => (
-            <span key={i} className="text-xs bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-              <span className="line-clamp-1 max-w-[180px]">{ind}</span>
+      <ConfirmDialog
+        isOpen={showConfirm}
+        title="Delete Post"
+        message="Are you sure you want to delete this post? This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteConfirmed}
+        onCancel={() => setShowConfirm(false)}
+      />
+
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-shadow p-5">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-brand-primary flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+              {post.author_name[0].toUpperCase()}
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">{post.author_name}</p>
+              <p className="text-xs text-gray-400">{timeAgo(post.created_at, lang)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${RISK_COLORS[post.risk_level] || RISK_COLORS.HIGH}`}>
+              {post.risk_level} {post.risk_score}%
             </span>
-          ))}
-          {post.indicators.length > 4 && (
-            <span className="text-xs text-gray-400">+{post.indicators.length - 4} more</span>
-          )}
+            {currentUser && currentUser.id === post.user_id && (
+              <button
+                onClick={() => setShowConfirm(true)}
+                disabled={deleting}
+                className="text-gray-300 hover:text-red-500 transition-colors"
+                title="Delete post"
+              >
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              </button>
+            )}
+          </div>
         </div>
-      )}
-    </div>
+
+        {/* Risk bar */}
+        <div className="w-full bg-gray-100 rounded-full h-1.5 mb-3">
+          <div
+            className={`h-1.5 rounded-full ${RISK_BAR[post.risk_level] || RISK_BAR.HIGH}`}
+            style={{ width: `${post.risk_score}%` }}
+          />
+        </div>
+
+        {/* Scam image — clickable to enlarge */}
+        {post.image_url && (
+          <div
+            className="relative mb-3 rounded-xl overflow-hidden border border-gray-200 cursor-zoom-in group"
+            onClick={() => setLightboxSrc(post.image_url)}
+          >
+            <img
+              src={post.image_url}
+              alt="Shared scam screenshot"
+              className="w-full max-h-48 object-cover transition-transform group-hover:scale-[1.02]"
+              loading="lazy"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+              <ZoomIn className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+            </div>
+          </div>
+        )}
+
+        {/* Extracted / suspicious message */}
+        {post.original_message && (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 mb-3">
+            <p className="text-xs text-gray-500 mb-0.5 font-medium flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-orange-500" />
+              {post.image_url ? 'Extracted suspicious message:' : 'Suspicious content:'}
+            </p>
+            <p className="text-sm text-gray-700 line-clamp-4 break-words whitespace-pre-wrap">
+              {post.original_message}
+            </p>
+          </div>
+        )}
+
+        {/* User note */}
+        {post.note && (
+          <p className="text-sm text-gray-600 italic mb-3 border-l-2 border-blue-300 pl-3">
+            "{post.note}"
+          </p>
+        )}
+
+        {/* Indicators */}
+        {post.indicators?.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {post.indicators.slice(0, 4).map((ind, i) => (
+              <span key={i} className="text-xs bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                <span className="line-clamp-1 max-w-[180px]">{ind}</span>
+              </span>
+            ))}
+            {post.indicators.length > 4 && (
+              <span className="text-xs text-gray-400">+{post.indicators.length - 4} more</span>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 
+// ─── Page ────────────────────────────────────────────────────
 export default function Community() {
   const { user } = useAuth()
   const { t, lang } = useLanguage()
@@ -132,7 +210,7 @@ export default function Community() {
       }
       setTotal(data.total)
       setOffset(off)
-    } catch (err) {
+    } catch {
       setError('Could not load community posts. Please ensure the backend is running.')
     } finally {
       setLoading(false)
@@ -143,7 +221,7 @@ export default function Community() {
 
   const handleDelete = (id) => {
     setPosts((prev) => prev.filter((p) => p.id !== id))
-    setTotal((t) => t - 1)
+    setTotal((n) => n - 1)
   }
 
   return (
@@ -184,7 +262,6 @@ export default function Community() {
 
       {/* Content */}
       <div className="max-w-5xl mx-auto px-4 py-8">
-        {/* Refresh */}
         <div className="flex justify-end mb-4">
           <button
             onClick={() => fetchPosts(0)}
@@ -230,7 +307,6 @@ export default function Community() {
               ))}
             </div>
 
-            {/* Load more */}
             {posts.length < total && (
               <div className="text-center mt-8">
                 <button

@@ -43,12 +43,33 @@ export async function resetSimulator(sessionId = null) {
 // Auth
 // ─────────────────────────────────────────────
 export async function apiLogin(email, password) {
-  const res = await api.post('/auth/login', { email, password })
+  const formData = new URLSearchParams()
+  formData.append('username', email)
+  formData.append('password', password)
+  const res = await api.post('/auth/login', formData, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  })
   return res.data
 }
 
 export async function apiSignup(email, password, display_name) {
-  const res = await api.post('/auth/signup', { email, password, display_name })
+  const username = display_name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+  const res = await api.post('/auth/signup', {
+    email,
+    password,
+    username,
+    full_name: display_name,
+  })
+  return res.data
+}
+
+export async function apiGetMe() {
+  const res = await api.get('/auth/me')
+  return res.data
+}
+
+export async function apiRefreshToken(refreshToken) {
+  const res = await api.post('/auth/refresh', { refresh_token: refreshToken })
   return res.data
 }
 
@@ -56,22 +77,24 @@ export async function apiSignup(email, password, display_name) {
 // Community
 // ─────────────────────────────────────────────
 export async function getCommunityPosts(limit = 20, offset = 0) {
-  const res = await api.get('/community', { params: { limit, offset } })
+  const res = await api.get('/community/posts', { params: { limit, offset } })
   return res.data
 }
 
 export async function getRecentPosts(limit = 3) {
-  const res = await api.get('/community/recent', { params: { limit } })
+  const res = await api.get('/community/posts', { params: { limit, offset: 0 } })
   return res.data
 }
 
-export async function shareToCommmunity(payload) {
-  const res = await api.post('/community', payload)
+export async function createCommunityPost(formData) {
+  const res = await api.post('/community/posts', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
   return res.data
 }
 
 export async function deletePost(postId) {
-  const res = await api.delete(`/community/${postId}`)
+  const res = await api.delete(`/community/posts/${postId}`)
   return res.data
 }
 

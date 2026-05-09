@@ -5,15 +5,31 @@ Main application entry point.
 """
 
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+from database import engine, Base
 from routers import analysis, simulator
+from routers.auth import router as auth_router
+from routers.community import router as community_router
 from models.schemas import HealthResponse
+import models.orm  # noqa: F401 — ensure ORM models are registered on Base.metadata
 
-# Load environment variables
 load_dotenv()
+
+
+# ─────────────────────────────────────────────
+# Lifespan — create DB tables on startup
+# ─────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
 
 # ─────────────────────────────────────────────
 # App Initialization
@@ -25,6 +41,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # ─────────────────────────────────────────────
@@ -45,6 +62,8 @@ app.add_middleware(
 
 app.include_router(analysis.router)
 app.include_router(simulator.router)
+app.include_router(auth_router)
+app.include_router(community_router)
 
 # ─────────────────────────────────────────────
 # Health Check
@@ -52,16 +71,11 @@ app.include_router(simulator.router)
 
 @app.get("/api/health", response_model=HealthResponse, tags=["health"])
 async def health_check():
-    """
-    Health check endpoint.
-    Returns API status and whether AWS Bedrock credentials are configured.
-    """
     bedrock_configured = bool(
         os.getenv("AWS_ACCESS_KEY_ID") and
         os.getenv("AWS_SECRET_ACCESS_KEY") and
         os.getenv("AWS_REGION")
     )
-
     return HealthResponse(
         status="ok",
         version="1.0.0",
