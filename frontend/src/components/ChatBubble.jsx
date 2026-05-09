@@ -57,7 +57,7 @@ export default function ChatBubble({ message, isBot, timestamp }) {
         <User className="w-4 h-4 text-gray-600" />
       </div>
       <div>
-        <div className="bg-[#003893] rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm">
+        <div className="bg-brand-primary rounded-2xl rounded-tr-sm px-4 py-3 shadow-sm">
           <p className="text-sm text-white leading-relaxed whitespace-pre-wrap">
             {message}
           </p>

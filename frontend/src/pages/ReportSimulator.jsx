@@ -377,7 +377,7 @@ export default function ReportSimulator() {
       {generated && reportData && (
         <div className="bg-white border-2 border-gray-300 rounded-2xl shadow-lg overflow-hidden">
           {/* Report header */}
-          <div className="bg-[#003893] text-white p-6">
+          <div className="bg-brand-primary text-white p-6">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-2">
@@ -389,7 +389,7 @@ export default function ReportSimulator() {
               </div>
               <div className="text-right">
                 <div className="text-xs text-blue-300 mb-1">Report ID</div>
-                <div className="font-mono font-bold text-[#FFCC00] text-lg">{reportData.reportId}</div>
+                <div className="font-mono font-bold text-brand-accent text-lg">{reportData.reportId}</div>
                 <div className="text-xs text-blue-300 mt-1">{reportData.generatedAt}</div>
               </div>
             </div>
@@ -477,7 +477,7 @@ export default function ReportSimulator() {
               <button
                 onClick={handleExportPdf}
                 disabled={exporting}
-                className="flex-1 bg-[#003893] hover:bg-blue-800 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="flex-1 bg-brand-primary hover:bg-blue-800 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 <Download className="w-5 h-5" />
                 {exporting ? 'Exporting...' : 'Export PDF / Eksport PDF'}

@@ -3,87 +3,82 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 })
 
-// ─────────────────────────────────────────────
-// Analysis Bot API
-// ─────────────────────────────────────────────
+export default api
 
-/**
- * Send a text message to the analysis bot.
- * @param {string} message
- * @param {string|null} sessionId
- * @returns {Promise<{reply, risk_score, risk_level, indicators, confidence, session_id}>}
- */
+// ─────────────────────────────────────────────
+// Analysis Bot
+// ─────────────────────────────────────────────
 export async function sendAnalysisMessage(message, sessionId = null) {
-  const response = await api.post('/analysis/chat', {
-    message,
-    session_id: sessionId,
-  })
-  return response.data
+  const res = await api.post('/analysis/chat', { message, session_id: sessionId })
+  return res.data
 }
 
-/**
- * Upload an image for scam analysis.
- * @param {File} file
- * @param {string|null} sessionId
- * @returns {Promise<{reply, risk_score, risk_level, indicators, confidence, filename}>}
- */
 export async function uploadAnalysisImage(file, sessionId = null) {
   const formData = new FormData()
   formData.append('file', file)
   if (sessionId) formData.append('session_id', sessionId)
-
-  const response = await api.post('/analysis/upload', formData, {
+  const res = await api.post('/analysis/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
-  return response.data
+  return res.data
 }
 
 // ─────────────────────────────────────────────
-// Scam Simulator API
+// Scam Simulator
 // ─────────────────────────────────────────────
-
-/**
- * Send a message in the scam simulator.
- * @param {string} message
- * @param {string|null} sessionId
- * @returns {Promise<{reply, session_id, scam_ended, user_caught_scam, report}>}
- */
 export async function sendSimulatorMessage(message, sessionId = null) {
-  const response = await api.post('/simulator/chat', {
-    message,
-    session_id: sessionId,
-  })
-  return response.data
+  const res = await api.post('/simulator/chat', { message, session_id: sessionId })
+  return res.data
 }
 
-/**
- * Reset the simulator session.
- * @param {string|null} sessionId
- * @returns {Promise<{session_id, message}>}
- */
 export async function resetSimulator(sessionId = null) {
-  const response = await api.post('/simulator/reset', {
-    session_id: sessionId,
-  })
-  return response.data
+  const res = await api.post('/simulator/reset', { session_id: sessionId })
+  return res.data
+}
+
+// ─────────────────────────────────────────────
+// Auth
+// ─────────────────────────────────────────────
+export async function apiLogin(email, password) {
+  const res = await api.post('/auth/login', { email, password })
+  return res.data
+}
+
+export async function apiSignup(email, password, display_name) {
+  const res = await api.post('/auth/signup', { email, password, display_name })
+  return res.data
+}
+
+// ─────────────────────────────────────────────
+// Community
+// ─────────────────────────────────────────────
+export async function getCommunityPosts(limit = 20, offset = 0) {
+  const res = await api.get('/community', { params: { limit, offset } })
+  return res.data
+}
+
+export async function getRecentPosts(limit = 3) {
+  const res = await api.get('/community/recent', { params: { limit } })
+  return res.data
+}
+
+export async function shareToCommmunity(payload) {
+  const res = await api.post('/community', payload)
+  return res.data
+}
+
+export async function deletePost(postId) {
+  const res = await api.delete(`/community/${postId}`)
+  return res.data
 }
 
 // ─────────────────────────────────────────────
 // Health Check
 // ─────────────────────────────────────────────
-
-/**
- * Check API health.
- * @returns {Promise<{status, version, bedrock_configured}>}
- */
 export async function checkHealth() {
-  const response = await api.get('/health')
-  return response.data
+  const res = await api.get('/health')
+  return res.data
 }
-
-export default api
