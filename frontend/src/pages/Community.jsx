@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, AlertTriangle, Loader2, RefreshCw, Lock, Trash2, X, ZoomIn } from 'lucide-react'
-import { getCommunityPosts, deletePost } from '../services/api'
+import { Users, AlertTriangle, Loader2, RefreshCw, Lock, Trash2, X, ZoomIn, ThumbsUp } from 'lucide-react'
+import { getCommunityPosts, getMyPosts, deletePost, upvotePost } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -60,10 +60,11 @@ function Lightbox({ src, alt, onClose }) {
 }
 
 // ─── Post Card ───────────────────────────────────────────────
-function PostCard({ post, onDelete, currentUser, lang, t }) {
+function PostCard({ post, onDelete, onUpvote, currentUser, lang, t }) {
   const [deleting, setDeleting]       = useState(false)
   const [lightboxSrc, setLightboxSrc] = useState(null)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [upvoting, setUpvoting]       = useState(false)
 
   const handleDeleteConfirmed = async () => {
     setShowConfirm(false)
@@ -74,6 +75,19 @@ function PostCard({ post, onDelete, currentUser, lang, t }) {
     } catch (_) {}
     setDeleting(false)
   }
+
+  const handleUpvote = async () => {
+    if (!currentUser || upvoting) return
+    setUpvoting(true)
+    try {
+      const data = await upvotePost(post.id)
+      onUpvote(post.id, data.upvote_count, data.has_upvoted)
+    } catch (_) {}
+    setUpvoting(false)
+  }
+
+  const isOwnPost = currentUser && currentUser.id === post.user_id
+  const canUpvote = currentUser && !isOwnPost
 
   return (
     <>
@@ -108,16 +122,6 @@ function PostCard({ post, onDelete, currentUser, lang, t }) {
             <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${RISK_COLORS[post.risk_level] || RISK_COLORS.HIGH}`}>
               {post.risk_level} {post.risk_score}%
             </span>
-            {currentUser && currentUser.id === post.user_id && (
-              <button
-                onClick={() => setShowConfirm(true)}
-                disabled={deleting}
-                className="text-gray-300 hover:text-red-500 transition-colors"
-                title="Delete post"
-              >
-                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              </button>
-            )}
           </div>
         </div>
 
@@ -169,7 +173,7 @@ function PostCard({ post, onDelete, currentUser, lang, t }) {
 
         {/* Indicators */}
         {post.indicators?.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 mb-3">
             {post.indicators.slice(0, 4).map((ind, i) => (
               <span key={i} className="text-xs bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3 flex-shrink-0" />
@@ -181,6 +185,59 @@ function PostCard({ post, onDelete, currentUser, lang, t }) {
             )}
           </div>
         )}
+
+        {/* Footer: upvote + delete */}
+        <div className="flex items-center justify-between pt-2 border-t border-gray-100 mt-2">
+          {/* Upvote button — hidden for own posts */}
+          {!isOwnPost && (
+            <button
+              onClick={handleUpvote}
+              disabled={!currentUser || upvoting}
+              title={
+                !currentUser ? 'Login to upvote'
+                : post.has_upvoted ? 'Remove upvote'
+                : 'I have seen this scam too'
+              }
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all
+                ${post.has_upvoted
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : currentUser
+                    ? 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+                    : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                }`}
+            >
+              {upvoting
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <ThumbsUp className="w-4 h-4" />
+              }
+              <span>{post.upvote_count}</span>
+              <span className="text-xs font-normal hidden sm:inline">
+                {post.has_upvoted ? 'Seen it' : 'Seen this scam'}
+              </span>
+            </button>
+          )}
+
+          {/* Upvote count (read-only) for own posts */}
+          {isOwnPost && post.upvote_count > 0 && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400">
+              <ThumbsUp className="w-4 h-4" />
+              <span>{post.upvote_count}</span>
+              <span className="text-xs hidden sm:inline">people seen this</span>
+            </div>
+          )}
+
+          {/* Delete (own post only) */}
+          {isOwnPost && (
+            <button
+              onClick={() => setShowConfirm(true)}
+              disabled={deleting}
+              className="text-gray-300 hover:text-red-500 transition-colors p-1.5 ml-auto"
+              title="Delete post"
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            </button>
+          )}
+        </div>
       </div>
     </>
   )
@@ -191,18 +248,21 @@ export default function Community() {
   const { user } = useAuth()
   const { t, lang } = useLanguage()
 
-  const [posts, setPosts]     = useState([])
-  const [total, setTotal]     = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState(null)
-  const [offset, setOffset]   = useState(0)
+  const [activeTab, setActiveTab] = useState('all')  // 'all' | 'mine'
+  const [posts, setPosts]         = useState([])
+  const [total, setTotal]         = useState(0)
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState(null)
+  const [offset, setOffset]       = useState(0)
   const LIMIT = 12
 
-  const fetchPosts = useCallback(async (off = 0) => {
+  const fetchPosts = useCallback(async (tab = activeTab, off = 0) => {
     setLoading(true)
     setError(null)
     try {
-      const data = await getCommunityPosts(LIMIT, off)
+      const data = tab === 'mine'
+        ? await getMyPosts(LIMIT, off)
+        : await getCommunityPosts(LIMIT, off)
       if (off === 0) {
         setPosts(data.posts)
       } else {
@@ -211,17 +271,31 @@ export default function Community() {
       setTotal(data.total)
       setOffset(off)
     } catch {
-      setError('Could not load community posts. Please ensure the backend is running.')
+      setError('Could not load posts. Please ensure the backend is running.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [activeTab])
 
-  useEffect(() => { fetchPosts(0) }, [fetchPosts])
+  useEffect(() => { fetchPosts(activeTab, 0) }, [activeTab])
+
+  const handleTabChange = (tab) => {
+    if (tab === activeTab) return
+    setActiveTab(tab)
+    setPosts([])
+    setOffset(0)
+  }
 
   const handleDelete = (id) => {
     setPosts((prev) => prev.filter((p) => p.id !== id))
     setTotal((n) => n - 1)
+  }
+
+  const handleUpvote = (id, upvote_count, has_upvoted) => {
+    setPosts((prev) => prev
+      .map((p) => p.id === id ? { ...p, upvote_count, has_upvoted } : p)
+      .sort((a, b) => b.upvote_count - a.upvote_count || new Date(b.created_at) - new Date(a.created_at))
+    )
   }
 
   return (
@@ -262,9 +336,36 @@ export default function Community() {
 
       {/* Content */}
       <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex justify-end mb-4">
+
+        {/* Tab switcher */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex bg-gray-200 rounded-xl p-1 gap-1">
+            <button
+              onClick={() => handleTabChange('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === 'all'
+                  ? 'bg-white text-brand-primary shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {lang === 'ms' ? 'Semua Siaran' : 'All Posts'}
+            </button>
+            {user && (
+              <button
+                onClick={() => handleTabChange('mine')}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  activeTab === 'mine'
+                    ? 'bg-white text-brand-primary shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {lang === 'ms' ? 'Siaran Saya' : 'My Posts'}
+              </button>
+            )}
+          </div>
+
           <button
-            onClick={() => fetchPosts(0)}
+            onClick={() => fetchPosts(activeTab, 0)}
             disabled={loading}
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
           >
@@ -287,7 +388,12 @@ export default function Community() {
         ) : posts.length === 0 ? (
           <div className="text-center py-20">
             <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">{t('community_empty')}</p>
+            <p className="text-gray-500">
+              {activeTab === 'mine'
+                ? (lang === 'ms' ? 'Anda belum berkongsi sebarang siaran.' : "You haven't shared any posts yet.")
+                : t('community_empty')
+              }
+            </p>
             <Link to="/analysis" className="mt-4 inline-block text-blue-600 font-semibold hover:underline text-sm">
               {t('community_share')} →
             </Link>
@@ -300,6 +406,7 @@ export default function Community() {
                   key={post.id}
                   post={post}
                   onDelete={handleDelete}
+                  onUpvote={handleUpvote}
                   currentUser={user}
                   lang={lang}
                   t={t}
@@ -310,7 +417,7 @@ export default function Community() {
             {posts.length < total && (
               <div className="text-center mt-8">
                 <button
-                  onClick={() => fetchPosts(offset + LIMIT)}
+                  onClick={() => fetchPosts(activeTab, offset + LIMIT)}
                   disabled={loading}
                   className="bg-brand-primary hover:bg-blue-800 text-white font-bold px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2 mx-auto"
                 >

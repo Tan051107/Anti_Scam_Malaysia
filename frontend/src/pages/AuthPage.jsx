@@ -142,11 +142,6 @@ export default function AuthPage({ mode = 'login' }) {
             </p>
           </form>
         </div>
-
-        <p className="text-center text-xs text-gray-400 mt-4">
-          {/* Note: login is only required for Community sharing */}
-          You can use all other features without logging in.
-        </p>
       </div>
     </div>
   )

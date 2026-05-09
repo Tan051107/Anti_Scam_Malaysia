@@ -82,6 +82,9 @@ class CommunityPost(Base):
 
     # Relationships
     author: Mapped["User"] = relationship("User", back_populates="posts")
+    upvotes: Mapped[list["PostUpvote"]] = relationship(
+        "PostUpvote", back_populates="post", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("ix_community_posts_created_at", "created_at"),
@@ -89,6 +92,39 @@ class CommunityPost(Base):
 
     def __repr__(self) -> str:
         return f"<CommunityPost {self.id} by user {self.user_id}>"
+
+
+# ─────────────────────────────────────────────
+# Post Upvotes
+# ─────────────────────────────────────────────
+
+from sqlalchemy import UniqueConstraint
+
+class PostUpvote(Base):
+    __tablename__ = "post_upvotes"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
+    post_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("community_posts.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    post: Mapped["CommunityPost"] = relationship("CommunityPost", back_populates="upvotes")
+
+    __table_args__ = (
+        UniqueConstraint("post_id", "user_id", name="uq_post_upvote"),
+        Index("ix_post_upvotes_post_id", "post_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<PostUpvote post={self.post_id} user={self.user_id}>"
 
 
 # ─────────────────────────────────────────────

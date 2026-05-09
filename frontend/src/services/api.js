@@ -86,6 +86,11 @@ export async function getRecentPosts(limit = 3) {
   return res.data
 }
 
+export async function getMyPosts(limit = 20, offset = 0) {
+  const res = await api.get('/community/posts/mine', { params: { limit, offset } })
+  return res.data
+}
+
 export async function createCommunityPost(formData) {
   const res = await api.post('/community/posts', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -95,6 +100,11 @@ export async function createCommunityPost(formData) {
 
 export async function deletePost(postId) {
   const res = await api.delete(`/community/posts/${postId}`)
+  return res.data
+}
+
+export async function upvotePost(postId) {
+  const res = await api.post(`/community/posts/${postId}/upvote`)
   return res.data
 }
 
