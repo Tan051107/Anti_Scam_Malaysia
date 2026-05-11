@@ -58,7 +58,23 @@ MAX_TURNS = 20  # keep last 20 messages (10 user + 10 assistant)
 # System prompts
 # ─────────────────────────────────────────────
 
-CHAT_SYSTEM_PROMPT = """You are ScamShield, an expert anti-scam analyst specialising in Malaysia.
+# ─────────────────────────────────────────────
+# Language-aware system prompt builders
+# ─────────────────────────────────────────────
+
+def _chat_system_prompt(language: str = "en") -> str:
+    if language == "ms":
+        lang_rule = (
+            "- Balas SEPENUHNYA dalam Bahasa Malaysia (Melayu). "
+            "Jangan gunakan bahasa Inggeris kecuali untuk nama jenama, nombor hotline, atau istilah teknikal yang tiada padanan Melayu."
+        )
+    else:
+        lang_rule = (
+            "- Reply ENTIRELY in English. "
+            "Do not use Bahasa Malaysia except for Malaysian brand names or hotline numbers."
+        )
+
+    return f"""You are ScamShield, an expert anti-scam analyst specialising in Malaysia.
 Your job is to analyse messages submitted by Malaysian users and determine whether they are scams.
 
 Consider these Malaysia-specific scam types:
@@ -72,22 +88,35 @@ Consider these Malaysia-specific scam types:
 - Phishing links (bit.ly, tinyurl, suspicious domains)
 
 Rules:
-- Respond in BOTH English and Malay (Bahasa Malaysia)
+{lang_rule}
 - Be direct and clear about the risk level
 - Always recommend official reporting channels when risk is HIGH or CRITICAL:
   CCID Polis: 03-2610 5000 | BNMTELELINK: 1-300-88-5465 | MCMC: 1-800-188-030
 
 You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
 The JSON must have exactly these fields:
-{
-  "reply": "<bilingual analysis and advice as a readable string>",
+{{
+  "reply": "<analysis and advice as a readable string>",
   "risk_score": <integer 0-100>,
   "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
   "indicators": ["<indicator 1>", "<indicator 2>"],
   "confidence": <integer 0-100>
-}"""
+}}"""
 
-UPLOAD_SYSTEM_PROMPT = """You are ScamShield, an expert anti-scam analyst specialising in Malaysia.
+
+def _upload_system_prompt(language: str = "en") -> str:
+    if language == "ms":
+        lang_rule = (
+            "- Balas SEPENUHNYA dalam Bahasa Malaysia (Melayu). "
+            "Jangan gunakan bahasa Inggeris kecuali untuk nama jenama, nombor hotline, atau istilah teknikal."
+        )
+    else:
+        lang_rule = (
+            "- Reply ENTIRELY in English. "
+            "Do not use Bahasa Malaysia except for Malaysian brand names or hotline numbers."
+        )
+
+    return f"""You are ScamShield, an expert anti-scam analyst specialising in Malaysia.
 Your job is to analyse images submitted by Malaysian users — these may be screenshots of messages,
 fake bank notices, suspicious QR codes, phishing emails, or fraudulent documents.
 
@@ -100,20 +129,20 @@ Consider these Malaysia-specific scam types:
 - Counterfeit receipts or transfer confirmations
 
 Rules:
-- Respond in BOTH English and Malay (Bahasa Malaysia)
+{lang_rule}
 - Describe what you see in the image and why it is or isn't suspicious
 - Always recommend official reporting channels when risk is HIGH or CRITICAL:
   CCID Polis: 03-2610 5000 | BNMTELELINK: 1-300-88-5465
 
 You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
 The JSON must have exactly these fields:
-{
-  "reply": "<bilingual analysis and advice as a readable string>",
+{{
+  "reply": "<analysis and advice as a readable string>",
   "risk_score": <integer 0-100>,
   "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
   "indicators": ["<indicator 1>", "<indicator 2>"],
   "confidence": <integer 0-100>
-}"""
+}}"""
 
 
 # ─────────────────────────────────────────────
@@ -168,6 +197,7 @@ async def analysis_chat(request: AnalysisChatRequest):
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     session_id = request.session_id or str(uuid.uuid4())
+    language = request.language or "en"
 
     # Retrieve or initialise history for this session
     history = _history.setdefault(session_id, [])
@@ -178,10 +208,10 @@ async def analysis_chat(request: AnalysisChatRequest):
     # Assemble messages: history + new turn
     messages = history + [new_user_turn]
 
-    # Call Bedrock
+    # Call Bedrock with the language-aware system prompt
     result = _invoke(
         model_id=CHAT_MODEL_ID,
-        system_prompt=CHAT_SYSTEM_PROMPT,
+        system_prompt=_chat_system_prompt(language),
         messages=messages,
     )
 
@@ -216,6 +246,7 @@ async def clear_chat_history(session_id: str):
 @router.post("/upload", response_model=AnalysisUploadResponse)
 async def analysis_upload(
     file: UploadFile = File(...),
+    language: str = "en",
 ):
     """
     Analyse an uploaded image for scam indicators using Claude Sonnet 3.5 v2 (vision).
@@ -254,7 +285,7 @@ async def analysis_upload(
 
     result = _invoke(
         model_id=UPLOAD_MODEL_ID,
-        system_prompt=UPLOAD_SYSTEM_PROMPT,
+        system_prompt=_upload_system_prompt(language),
         messages=messages,
         max_tokens=1536,
     )

@@ -11,15 +11,16 @@ export default api
 // ─────────────────────────────────────────────
 // Analysis Bot
 // ─────────────────────────────────────────────
-export async function sendAnalysisMessage(message, sessionId = null) {
-  const res = await api.post('/analysis/chat', { message, session_id: sessionId })
+export async function sendAnalysisMessage(message, sessionId = null, language = 'en') {
+  const res = await api.post('/analysis/chat', { message, session_id: sessionId, language })
   return res.data
 }
 
-export async function uploadAnalysisImage(file, sessionId = null) {
+export async function uploadAnalysisImage(file, sessionId = null, language = 'en') {
   const formData = new FormData()
   formData.append('file', file)
   if (sessionId) formData.append('session_id', sessionId)
+  formData.append('language', language)
   const res = await api.post('/analysis/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
@@ -29,8 +30,8 @@ export async function uploadAnalysisImage(file, sessionId = null) {
 // ─────────────────────────────────────────────
 // Scam Simulator
 // ─────────────────────────────────────────────
-export async function sendSimulatorMessage(message, sessionId = null) {
-  const res = await api.post('/simulator/chat', { message, session_id: sessionId })
+export async function sendSimulatorMessage(message, sessionId = null, language = 'en') {
+  const res = await api.post('/simulator/chat', { message, session_id: sessionId, language })
   return res.data
 }
 

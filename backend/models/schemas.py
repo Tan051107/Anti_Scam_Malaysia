@@ -14,6 +14,7 @@ from typing import Optional, List, Any
 class AnalysisChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    language: Optional[str] = "en"   # "en" | "ms"
 
 
 class AnalysisChatResponse(BaseModel):
@@ -41,6 +42,7 @@ class AnalysisUploadResponse(BaseModel):
 class SimulatorChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    language: Optional[str] = "en"   # "en" | "ms"
 
 
 class ScamReport(BaseModel):

@@ -1,28 +1,53 @@
 import React, { useState } from 'react'
 import { FileText, Download, AlertCircle, CheckCircle } from 'lucide-react'
+import { useLanguage } from '../context/LanguageContext'
 
-const SCAM_TYPES = [
-  'Macau Scam / Penipuan Macau',
-  'Love Scam / Penipuan Cinta',
-  'Investment Scam (Crypto/Forex) / Penipuan Pelaburan',
-  'Parcel Delivery Scam / Penipuan Bungkusan',
-  'LHDN Tax Scam / Penipuan LHDN',
-  'Bank Impersonation / Peniruan Bank',
-  'Online Shopping Scam / Penipuan Beli-belah Dalam Talian',
-  'Job Scam / Penipuan Kerja',
-  'Phishing / Pancingan Data',
-  'Other / Lain-lain',
+const SCAM_TYPES_EN = [
+  'Macau Scam',
+  'Love Scam',
+  'Investment Scam (Crypto/Forex)',
+  'Parcel Delivery Scam',
+  'LHDN Tax Scam',
+  'Bank Impersonation',
+  'Online Shopping Scam',
+  'Job Scam',
+  'Phishing',
+  'Other',
 ]
 
-const CONTACT_METHODS = [
+const SCAM_TYPES_MS = [
+  'Penipuan Macau',
+  'Penipuan Cinta',
+  'Penipuan Pelaburan (Kripto/Forex)',
+  'Penipuan Penghantaran Bungkusan',
+  'Penipuan Cukai LHDN',
+  'Peniruan Bank',
+  'Penipuan Beli-belah Dalam Talian',
+  'Penipuan Kerja',
+  'Pancingan Data',
+  'Lain-lain',
+]
+
+const CONTACT_METHODS_EN = [
   'WhatsApp',
   'Telegram',
-  'Phone Call / Panggilan Telefon',
+  'Phone Call',
   'SMS',
   'Email',
   'Facebook / Instagram',
   'Dating App',
-  'Other / Lain-lain',
+  'Other',
+]
+
+const CONTACT_METHODS_MS = [
+  'WhatsApp',
+  'Telegram',
+  'Panggilan Telefon',
+  'SMS',
+  'E-mel',
+  'Facebook / Instagram',
+  'Aplikasi Temu Kenalan',
+  'Lain-lain',
 ]
 
 const initialForm = {
@@ -51,19 +76,24 @@ function generateReportId() {
 }
 
 export default function ReportSimulator() {
+  const { t, lang } = useLanguage()
+
   const [form, setForm] = useState(initialForm)
   const [generated, setGenerated] = useState(false)
   const [reportData, setReportData] = useState(null)
   const [errors, setErrors] = useState({})
   const [exporting, setExporting] = useState(false)
 
+  const scamTypes = lang === 'ms' ? SCAM_TYPES_MS : SCAM_TYPES_EN
+  const contactMethods = lang === 'ms' ? CONTACT_METHODS_MS : CONTACT_METHODS_EN
+
   const validate = () => {
     const e = {}
-    if (!form.incidentDate) e.incidentDate = 'Required / Diperlukan'
-    if (!form.scamType) e.scamType = 'Required / Diperlukan'
+    if (!form.incidentDate) e.incidentDate = t('report_required')
+    if (!form.scamType) e.scamType = t('report_required')
     if (!form.description || form.description.length < 20)
-      e.description = 'Please provide at least 20 characters / Sila berikan sekurang-kurangnya 20 aksara'
-    if (!form.contactMethod) e.contactMethod = 'Required / Diperlukan'
+      e.description = t('report_desc_min')
+    if (!form.contactMethod) e.contactMethod = t('report_required')
     return e
   }
 
@@ -83,7 +113,7 @@ export default function ReportSimulator() {
       ...form,
       reportId: generateReportId(),
       generatedAt: new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }),
-      status: 'DRAFT — For Reference Only',
+      status: t('report_status_draft'),
     }
     setReportData(report)
     setGenerated(true)
@@ -107,7 +137,7 @@ export default function ReportSimulator() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      alert('Failed to export PDF. Please try again.')
+      alert(t('report_export_fail'))
     } finally {
       setExporting(false)
     }
@@ -133,29 +163,25 @@ export default function ReportSimulator() {
           <FileText className="w-6 h-6 text-white" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Report Generator</h1>
-          <p className="text-sm text-gray-500">Penjana Laporan Insiden Penipuan</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('report_title')}</h1>
+          <p className="text-sm text-gray-500">{t('report_subtitle')}</p>
         </div>
       </div>
 
       <div className="bg-yellow-50 border border-yellow-300 rounded-xl p-4 mb-6 flex items-start gap-3">
         <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-yellow-800">
-          <strong>Note / Nota:</strong> This tool generates a reference report for your records.
-          For official police reports, please visit your nearest police station or use{' '}
-          <strong>e-Aduan PDRM</strong>. For bank-related scams, contact your bank immediately.
-        </p>
+        <p className="text-sm text-yellow-800">{t('report_notice')}</p>
       </div>
 
       {/* Form */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 mb-6">
-        <h2 className="font-bold text-gray-900 mb-5 text-lg">Incident Details / Butiran Insiden</h2>
+        <h2 className="font-bold text-gray-900 mb-5 text-lg">{t('report_incident_details')}</h2>
 
         <div className="grid md:grid-cols-2 gap-5">
           {/* Incident Date */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Incident Date / Tarikh Insiden <span className="text-red-500">*</span>
+              {t('report_incident_date')} <span className="text-red-500">*</span>
             </label>
             <input
               type="date"
@@ -171,7 +197,7 @@ export default function ReportSimulator() {
           {/* Scam Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Scam Type / Jenis Penipuan <span className="text-red-500">*</span>
+              {t('report_scam_type')} <span className="text-red-500">*</span>
             </label>
             <select
               name="scamType"
@@ -179,9 +205,9 @@ export default function ReportSimulator() {
               onChange={handleChange}
               className={inputClass('scamType')}
             >
-              <option value="">Select / Pilih...</option>
-              {SCAM_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
+              <option value="">{t('report_select')}</option>
+              {scamTypes.map((type) => (
+                <option key={type} value={type}>{type}</option>
               ))}
             </select>
             {errors.scamType && <p className="text-xs text-red-500 mt-1">{errors.scamType}</p>}
@@ -190,7 +216,7 @@ export default function ReportSimulator() {
           {/* Contact Method */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Contact Method Used / Kaedah Hubungan <span className="text-red-500">*</span>
+              {t('report_contact_method')} <span className="text-red-500">*</span>
             </label>
             <select
               name="contactMethod"
@@ -198,8 +224,8 @@ export default function ReportSimulator() {
               onChange={handleChange}
               className={inputClass('contactMethod')}
             >
-              <option value="">Select / Pilih...</option>
-              {CONTACT_METHODS.map((m) => (
+              <option value="">{t('report_select')}</option>
+              {contactMethods.map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
@@ -209,14 +235,14 @@ export default function ReportSimulator() {
           {/* Scammer Contact */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Scammer's Contact / Nombor/Akaun Penipu
+              {t('report_scammer_contact')}
             </label>
             <input
               type="text"
               name="scammerContact"
               value={form.scammerContact}
               onChange={handleChange}
-              placeholder="+60123456789 or username"
+              placeholder={t('report_scammer_contact_ph')}
               className={inputClass('scammerContact')}
             />
           </div>
@@ -224,7 +250,7 @@ export default function ReportSimulator() {
           {/* Amount Lost */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Amount Lost / Jumlah Kerugian (if any / jika ada)
+              {t('report_amount_lost')}
             </label>
             <div className="flex gap-2">
               <select
@@ -250,17 +276,17 @@ export default function ReportSimulator() {
             </div>
           </div>
 
-          {/* Bank Account (scammer's) */}
+          {/* Bank Account */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Scammer's Bank Account / Akaun Bank Penipu
+              {t('report_bank_account')}
             </label>
             <input
               type="text"
               name="bankAccount"
               value={form.bankAccount}
               onChange={handleChange}
-              placeholder="Bank name + account number"
+              placeholder={t('report_bank_account_ph')}
               className={inputClass('bankAccount')}
             />
           </div>
@@ -269,45 +295,42 @@ export default function ReportSimulator() {
         {/* Description */}
         <div className="mt-5">
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Description of Incident / Penerangan Insiden <span className="text-red-500">*</span>
+            {t('report_description')} <span className="text-red-500">*</span>
           </label>
           <textarea
             name="description"
             value={form.description}
             onChange={handleChange}
             rows={5}
-            placeholder="Describe what happened in detail / Huraikan apa yang berlaku secara terperinci..."
+            placeholder={t('report_description_ph')}
             className={`${inputClass('description')} resize-none`}
           />
           <div className="flex justify-between mt-1">
-            {errors.description ? (
-              <p className="text-xs text-red-500">{errors.description}</p>
-            ) : (
-              <span />
-            )}
-            <span className="text-xs text-gray-400">{form.description.length} chars</span>
+            {errors.description
+              ? <p className="text-xs text-red-500">{errors.description}</p>
+              : <span />
+            }
+            <span className="text-xs text-gray-400">{form.description.length} {t('report_chars')}</span>
           </div>
         </div>
 
-        {/* Victim Info (optional) */}
+        {/* Victim Info */}
         <div className="mt-5 border-t border-gray-100 pt-5">
-          <h3 className="font-semibold text-gray-700 text-sm mb-3">
-            Your Information (Optional) / Maklumat Anda (Pilihan)
-          </h3>
+          <h3 className="font-semibold text-gray-700 text-sm mb-3">{t('report_victim_info')}</h3>
           <div className="grid md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Full Name / Nama Penuh</label>
+              <label className="block text-xs text-gray-600 mb-1">{t('report_victim_name')}</label>
               <input
                 type="text"
                 name="victimName"
                 value={form.victimName}
                 onChange={handleChange}
-                placeholder="Your name"
+                placeholder={t('report_victim_name')}
                 className={inputClass('victimName')}
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">IC Number / Nombor IC</label>
+              <label className="block text-xs text-gray-600 mb-1">{t('report_victim_ic')}</label>
               <input
                 type="text"
                 name="victimIC"
@@ -318,7 +341,7 @@ export default function ReportSimulator() {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Phone / Telefon</label>
+              <label className="block text-xs text-gray-600 mb-1">{t('report_victim_phone')}</label>
               <input
                 type="text"
                 name="victimPhone"
@@ -341,7 +364,7 @@ export default function ReportSimulator() {
               onChange={handleChange}
               className="w-4 h-4 accent-blue-600"
             />
-            Already reported to PDRM / Sudah lapor ke PDRM
+            {t('report_reported_pdrm')}
           </label>
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
             <input
@@ -351,7 +374,7 @@ export default function ReportSimulator() {
               onChange={handleChange}
               className="w-4 h-4 accent-blue-600"
             />
-            Already reported to BNM / Sudah lapor ke BNM
+            {t('report_reported_bnm')}
           </label>
         </div>
 
@@ -362,13 +385,13 @@ export default function ReportSimulator() {
             className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             <FileText className="w-5 h-5" />
-            Jana Laporan / Generate Report
+            {t('report_generate_btn')}
           </button>
           <button
             onClick={handleReset}
             className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold px-6 py-3 rounded-xl transition-colors"
           >
-            Reset
+            {t('report_reset_btn')}
           </button>
         </div>
       </div>
@@ -382,13 +405,12 @@ export default function ReportSimulator() {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <CheckCircle className="w-6 h-6 text-green-400" />
-                  <span className="text-green-300 text-sm font-medium">Report Generated</span>
+                  <span className="text-green-300 text-sm font-medium">{t('report_generated_label')}</span>
                 </div>
-                <h2 className="text-2xl font-extrabold">SCAM INCIDENT REPORT</h2>
-                <p className="text-blue-200 text-sm">Laporan Insiden Penipuan</p>
+                <h2 className="text-2xl font-extrabold">{t('report_heading')}</h2>
               </div>
               <div className="text-right">
-                <div className="text-xs text-blue-300 mb-1">Report ID</div>
+                <div className="text-xs text-blue-300 mb-1">{t('report_id_label')}</div>
                 <div className="font-mono font-bold text-brand-accent text-lg">{reportData.reportId}</div>
                 <div className="text-xs text-blue-300 mt-1">{reportData.generatedAt}</div>
               </div>
@@ -404,17 +426,17 @@ export default function ReportSimulator() {
             {/* Details grid */}
             <div className="grid md:grid-cols-2 gap-4">
               {[
-                { label: 'Incident Date / Tarikh', value: reportData.incidentDate },
-                { label: 'Scam Type / Jenis Penipuan', value: reportData.scamType },
-                { label: 'Contact Method / Kaedah Hubungan', value: reportData.contactMethod },
-                { label: "Scammer's Contact / Hubungan Penipu", value: reportData.scammerContact || 'Not provided' },
+                { label: t('report_field_date'),    value: reportData.incidentDate },
+                { label: t('report_field_type'),    value: reportData.scamType },
+                { label: t('report_field_contact'), value: reportData.contactMethod },
+                { label: t('report_field_scammer'), value: reportData.scammerContact || t('report_not_provided') },
                 {
-                  label: 'Amount Lost / Kerugian',
+                  label: t('report_field_amount'),
                   value: reportData.amountLost
                     ? `${reportData.currency} ${parseFloat(reportData.amountLost).toLocaleString('en-MY', { minimumFractionDigits: 2 })}`
-                    : 'Not specified / Tidak dinyatakan',
+                    : t('report_not_specified'),
                 },
-                { label: "Scammer's Bank / Bank Penipu", value: reportData.bankAccount || 'Not provided' },
+                { label: t('report_field_bank'), value: reportData.bankAccount || t('report_not_provided') },
               ].map((item) => (
                 <div key={item.label} className="bg-gray-50 rounded-lg p-3">
                   <div className="text-xs text-gray-500 mb-1">{item.label}</div>
@@ -425,23 +447,23 @@ export default function ReportSimulator() {
 
             {/* Description */}
             <div className="bg-gray-50 rounded-lg p-4">
-              <div className="text-xs text-gray-500 mb-2">Description / Penerangan</div>
+              <div className="text-xs text-gray-500 mb-2">{t('report_field_description')}</div>
               <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{reportData.description}</p>
             </div>
 
             {/* Victim info */}
             {(reportData.victimName || reportData.victimIC || reportData.victimPhone) && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="text-xs text-blue-600 font-semibold mb-2">Victim Information / Maklumat Mangsa</div>
+                <div className="text-xs text-blue-600 font-semibold mb-2">{t('report_victim_section')}</div>
                 <div className="grid grid-cols-3 gap-3 text-sm">
                   {reportData.victimName && (
-                    <div><span className="text-gray-500 text-xs">Name:</span><br />{reportData.victimName}</div>
+                    <div><span className="text-gray-500 text-xs">{t('report_victim_name')}:</span><br />{reportData.victimName}</div>
                   )}
                   {reportData.victimIC && (
-                    <div><span className="text-gray-500 text-xs">IC:</span><br />{reportData.victimIC}</div>
+                    <div><span className="text-gray-500 text-xs">{t('report_victim_ic')}:</span><br />{reportData.victimIC}</div>
                   )}
                   {reportData.victimPhone && (
-                    <div><span className="text-gray-500 text-xs">Phone:</span><br />{reportData.victimPhone}</div>
+                    <div><span className="text-gray-500 text-xs">{t('report_victim_phone')}:</span><br />{reportData.victimPhone}</div>
                   )}
                 </div>
               </div>
@@ -451,24 +473,24 @@ export default function ReportSimulator() {
             <div className="flex gap-4">
               <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${reportData.reportedToPolis ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
                 {reportData.reportedToPolis ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                Reported to PDRM
+                {t('report_reported_to_pdrm')}
               </div>
               <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${reportData.reportedToBNM ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
                 {reportData.reportedToBNM ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                Reported to BNM
+                {t('report_reported_to_bnm')}
               </div>
             </div>
 
-            {/* Advice */}
+            {/* Next steps */}
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <h3 className="font-bold text-red-800 text-sm mb-2">🚨 Next Steps / Langkah Seterusnya</h3>
+              <h3 className="font-bold text-red-800 text-sm mb-2">{t('report_next_steps')}</h3>
               <ul className="text-xs text-red-700 space-y-1">
-                <li>• File a police report at your nearest police station / Buat laporan polis di balai polis berhampiran</li>
-                <li>• Contact your bank immediately if money was transferred / Hubungi bank anda segera jika wang telah dipindahkan</li>
-                <li>• Report to CCID: <strong>03-2610 5000</strong></li>
-                <li>• Report to BNM TELELINK: <strong>1-300-88-5465</strong></li>
-                <li>• Check mule accounts at: <strong>www.semakmule.rmp.gov.my</strong></li>
-                <li>• Report to MCMC: <strong>aduan.mcmc.gov.my</strong></li>
+                <li>{t('report_step_police')}</li>
+                <li>{t('report_step_bank')}</li>
+                <li>{t('report_step_ccid')} <strong>03-2610 5000</strong></li>
+                <li>{t('report_step_bnm')} <strong>1-300-88-5465</strong></li>
+                <li>{t('report_step_mule')} <strong>www.semakmule.rmp.gov.my</strong></li>
+                <li>{t('report_step_mcmc')} <strong>aduan.mcmc.gov.my</strong></li>
               </ul>
             </div>
 
@@ -480,13 +502,13 @@ export default function ReportSimulator() {
                 className="flex-1 bg-brand-primary hover:bg-blue-800 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 <Download className="w-5 h-5" />
-                {exporting ? 'Exporting...' : 'Export PDF / Eksport PDF'}
+                {exporting ? t('report_exporting') : t('report_export_btn')}
               </button>
               <button
                 onClick={handleReset}
                 className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition-colors"
               >
-                New Report / Laporan Baru
+                {t('report_new_btn')}
               </button>
             </div>
           </div>

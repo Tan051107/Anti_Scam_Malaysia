@@ -4,19 +4,17 @@ import ChatBubble from '../components/ChatBubble'
 import RiskGauge from '../components/RiskGauge'
 import ShareModal from '../components/ShareModal'
 import { sendAnalysisMessage, uploadAnalysisImage } from '../services/api'
-import { useLanguage } from '../context/LanguageContext'
+import { useLanguage, translations } from '../context/LanguageContext'
 
 export default function AnalysisBot() {
   const { t, lang } = useLanguage()
 
-  const WELCOME_MESSAGE = {
+  const [messages, setMessages]       = useState(() => [{
     id: 'welcome',
     isBot: true,
-    text: t('analysis_welcome'),
+    text: translations[lang]?.analysis_welcome ?? translations.en.analysis_welcome,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  }
-
-  const [messages, setMessages]       = useState([WELCOME_MESSAGE])
+  }])
   const [input, setInput]             = useState('')
   const [loading, setLoading]         = useState(false)
   const [sessionId, setSessionId]     = useState(null)
@@ -29,6 +27,40 @@ export default function AnalysisBot() {
 
   const messagesEndRef = useRef(null)
   const fileInputRef   = useRef(null)
+  // Skip the effect on first mount
+  const isFirstRender  = useRef(true)
+
+  // React to language changes
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+
+    setMessages((prev) => {
+      const hasConversation = prev.some((msg) => msg.id !== 'welcome' && !msg.isNotice)
+
+      // Only update the welcome message text when no real conversation has started yet
+      const updated = hasConversation
+        ? prev
+        : prev.map((msg) =>
+            msg.id === 'welcome' ? { ...msg, text: t('analysis_welcome') } : msg
+          )
+
+      // Once a conversation exists, append a notice pill about the language switch
+      if (!hasConversation) return updated
+
+      const notice = lang === 'ms'
+        ? '🌐 Bahasa ditukar kepada Bahasa Malaysia.\n\nMesej baru akan dibalas dalam Bahasa Malaysia. Mesej sebelumnya kekal dalam bahasa asal.'
+        : '🌐 Language switched to English.\n\nNew messages will be answered in English. Previous messages remain in their original language.'
+
+      const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      return [
+        ...updated,
+        { id: `lang-notice-${Date.now()}`, isBot: true, text: notice, timestamp: ts, isNotice: true },
+      ]
+    })
+  }, [lang])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -53,7 +85,7 @@ export default function AnalysisBot() {
       setAttachedFile(null)
       setLoading(true)
       try {
-        const data = await uploadAnalysisImage(file, sessionId)
+        const data = await uploadAnalysisImage(file, sessionId, lang)
         if (data.session_id) setSessionId(data.session_id)
         setRiskData({ score: data.risk_score, level: data.risk_level, confidence: data.confidence, indicators: data.indicators })
         setLastMessage(`[Image: ${file.name}]`)
@@ -74,7 +106,7 @@ export default function AnalysisBot() {
     setLoading(true)
 
     try {
-      const data = await sendAnalysisMessage(trimmed, sessionId)
+      const data = await sendAnalysisMessage(trimmed, sessionId, lang)
       if (data.session_id) setSessionId(data.session_id)
       setRiskData({ score: data.risk_score, level: data.risk_level, confidence: data.confidence, indicators: data.indicators })
       addMessage(data.reply, true)
@@ -127,9 +159,17 @@ export default function AnalysisBot() {
         {/* LEFT — Chat */}
         <div className="flex-1 flex flex-col min-w-0 border-r border-gray-200">
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-            {messages.map((msg) => (
-              <ChatBubble key={msg.id} message={msg.text} isBot={msg.isBot} timestamp={msg.timestamp} imageUrl={msg.imageUrl} />
-            ))}
+            {messages.map((msg) =>
+              msg.isNotice ? (
+                <div key={msg.id} className="flex justify-center">
+                  <div className="bg-blue-50 border border-blue-200 text-blue-800 text-xs px-4 py-2.5 rounded-xl max-w-sm text-center leading-relaxed whitespace-pre-wrap shadow-sm">
+                    {msg.text}
+                  </div>
+                </div>
+              ) : (
+                <ChatBubble key={msg.id} message={msg.text} isBot={msg.isBot} timestamp={msg.timestamp} imageUrl={msg.imageUrl} />
+              )
+            )}
             {loading && (
               <div className="flex items-center gap-2 text-gray-400 text-sm">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -190,9 +230,7 @@ export default function AnalysisBot() {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-1 text-center">
-              {lang === 'ms' ? 'Tekan Enter untuk hantar • Shift+Enter untuk baris baru' : 'Press Enter to send • Shift+Enter for new line'}
-            </p>
+            <p className="text-xs text-gray-400 mt-1 text-center">{t('analysis_enter_hint')}</p>
           </div>
         </div>
 
@@ -240,19 +278,9 @@ export default function AnalysisBot() {
             <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
               <h3 className="font-semibold text-blue-800 text-sm mb-2">{t('tips_title')}</h3>
               <ul className="text-xs text-blue-700 space-y-1">
-                {lang === 'ms' ? (
-                  <>
-                    <li>• Jangan sekali-kali kongsi OTP dengan sesiapa</li>
-                    <li>• Bank tidak pernah telefon minta kata laluan</li>
-                    <li>• Sahkan melalui talian rasmi sahaja</li>
-                  </>
-                ) : (
-                  <>
-                    <li>• Never share OTP with anyone</li>
-                    <li>• Banks never call asking for passwords</li>
-                    <li>• Verify via official hotlines only</li>
-                  </>
-                )}
+                <li>{t('analysis_tip_otp')}</li>
+                <li>{t('analysis_tip_bank')}</li>
+                <li>{t('analysis_tip_verify')}</li>
               </ul>
             </div>
 
@@ -262,7 +290,7 @@ export default function AnalysisBot() {
               <div className="text-xs text-red-700 space-y-1">
                 <div>CCID Polis: <strong>03-2610 5000</strong></div>
                 <div>BNM TELELINK: <strong>1-300-88-5465</strong></div>
-                <div>{lang === 'ms' ? 'Kecemasan' : 'Emergency'}: <strong>997</strong></div>
+                <div>{t('analysis_hotline_emergency')}: <strong>997</strong></div>
               </div>
             </div>
           </div>
