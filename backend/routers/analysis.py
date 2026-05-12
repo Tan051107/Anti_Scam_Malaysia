@@ -10,7 +10,7 @@ import json
 import base64
 import boto3
 from functools import lru_cache
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from dotenv import load_dotenv
 
 from models.schemas import (
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 # Upload → Sonnet 3.5 v2 (best vision on Bedrock)
 # ─────────────────────────────────────────────
 CHAT_MODEL_ID   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-UPLOAD_MODEL_ID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+UPLOAD_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"  # Sonnet 4.5 blocked by SCP
 
 # ─────────────────────────────────────────────
 # Bedrock client — singleton
@@ -246,7 +246,7 @@ async def clear_chat_history(session_id: str):
 @router.post("/upload", response_model=AnalysisUploadResponse)
 async def analysis_upload(
     file: UploadFile = File(...),
-    language: str = "en",
+    language: str = Query("en", description="Response language: en or ms"),
 ):
     """
     Analyse an uploaded image for scam indicators using Claude Sonnet 3.5 v2 (vision).

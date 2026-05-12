@@ -20,9 +20,8 @@ export async function uploadAnalysisImage(file, sessionId = null, language = 'en
   const formData = new FormData()
   formData.append('file', file)
   if (sessionId) formData.append('session_id', sessionId)
-  formData.append('language', language)
-  const res = await api.post('/analysis/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+  const res = await api.post(`/analysis/upload?language=${language}`, formData, {
+    headers: { 'Content-Type': undefined },  // let axios set multipart + boundary automatically
   })
   return res.data
 }
@@ -93,8 +92,10 @@ export async function getMyPosts(limit = 20, offset = 0) {
 }
 
 export async function createCommunityPost(formData) {
+  // Set Content-Type to undefined so axios auto-sets multipart/form-data with correct boundary
+  // while still preserving the Authorization header from defaults
   const res = await api.post('/community/posts', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': undefined },
   })
   return res.data
 }
