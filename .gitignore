@@ -43,6 +43,7 @@ yarn-error.log*
 
 # ─── Test artefacts ──────────────────────────────────────────
 backend/test_bedrock.py
+backend/tests/
 
 # ─── Misc ────────────────────────────────────────────────────
 **/.history
