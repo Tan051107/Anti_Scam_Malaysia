@@ -2,8 +2,11 @@
 """
 Community Router
 Handles community posts with optional image uploads to S3.
-When an image is shared, Bedrock extracts the suspicious message text from it.
-Supports upvoting — posts sorted by upvote count descending.
+PII censorship pipeline:
+  1. Textract analyze_document (FORMS + TABLES) - pixel-perfect word boxes + KV pairs
+  2. Regex pre-filter - catches IC, phone, email, passport deterministically
+  3. Bedrock (structured context) - classifies remaining ambiguous words using KV context
+  4. Pillow - draws tight black boxes over flagged words only
 """
 
 import os
@@ -12,6 +15,8 @@ import json
 import base64
 import io
 import re
+import logging
+import difflib
 import boto3
 from PIL import Image, ImageDraw
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -25,13 +30,32 @@ from models.orm import CommunityPost, PostUpvote, User
 from auth import get_current_user, get_current_user_optional
 from routers.analysis import get_bedrock_client
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/community", tags=["community"])
 
 S3_BUCKET        = os.getenv("S3_BUCKET_NAME")
 AWS_REGION       = os.getenv("AWS_REGION", "us-east-1")
 EXTRACT_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-# VISION_MODEL_ID removed — image censorship now uses AWS Textract for pixel-accurate OCR
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB — Textract hard limit
+
+PII_FIELD_KEYS = {
+    "ic", "ic no", "ic number", "mykad", "nric", "phone", "tel",
+    "telefon", "mobile", "hp", "email", "e-mail", "name", "nama",
+    "address", "alamat", "passport", "akaun", "account", "bank",
+    "no ic", "no. ic", "nombor ic", "no telefon", "no. telefon",
+}
+
+PII_PATTERNS = [
+    re.compile(r'^\d{6}-\d{2}-\d{4}$'),
+    re.compile(r'^(\+?60|0)[1-9]\d{7,9}$'),
+    re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'),
+    re.compile(r'^\d{10,16}$'),
+    re.compile(r'^[A-Z]\d{7,9}$'),
+    re.compile(r'^\+?\d[\d\s\-]{8,14}\d$'),
+    re.compile(r'^\d{3,4}[-\s]?\d{3,4}[-\s]?\d{3,4}$'),
+]
 
 
 # ─────────────────────────────────────────────
@@ -50,9 +74,7 @@ def _get_s3_client():
 def _upload_to_s3(file_bytes: bytes, content_type: str, key: str) -> str:
     if not S3_BUCKET:
         raise HTTPException(status_code=500, detail="S3_BUCKET_NAME is not configured.")
-    _get_s3_client().put_object(
-        Bucket=S3_BUCKET, Key=key, Body=file_bytes, ContentType=content_type
-    )
+    _get_s3_client().put_object(Bucket=S3_BUCKET, Key=key, Body=file_bytes, ContentType=content_type)
     return key
 
 
@@ -62,6 +84,11 @@ def _get_presigned_url(key: str, expires: int = 3600) -> str:
         Params={"Bucket": S3_BUCKET, "Key": key},
         ExpiresIn=expires,
     )
+
+
+def _build_s3_url(key: str) -> str:
+    """Construct a direct S3 URL without an API call."""
+    return f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{key}"
 
 
 # ─────────────────────────────────────────────
@@ -75,30 +102,21 @@ def _extract_message_from_image(image_bytes: bytes, content_type: str) -> str:
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 512,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": content_type, "data": b64},
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "Extract the suspicious or scam-related message text visible in this image. "
-                            "Return ONLY the extracted message text as plain text, nothing else. "
-                            "If the image contains a chat message, SMS, email, or notice, copy the text exactly. "
-                            "If no suspicious text is found, return an empty string."
-                        ),
-                    },
-                ],
-            }],
+            "messages": [{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": content_type, "data": b64}},
+                {"type": "text", "text": (
+                    "Extract the suspicious or scam-related message text visible in this image. "
+                    "Return ONLY the extracted message text as plain text, nothing else. "
+                    "If the image contains a chat message, SMS, email, or notice, copy the text exactly. "
+                    "If no suspicious text is found, return an empty string."
+                )},
+            ]}],
         })
         response = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
-        result = json.loads(response["body"].read())
-        extracted = result["content"][0]["text"].strip()
+        extracted = json.loads(response["body"].read())["content"][0]["text"].strip()
         return extracted if extracted else ""
-    except Exception:
+    except Exception as exc:
+        logger.warning("_extract_message_from_image failed: %s", exc, exc_info=True)
         return ""
 
 
@@ -107,10 +125,6 @@ def _extract_message_from_image(image_bytes: bytes, content_type: str) -> str:
 # ─────────────────────────────────────────────
 
 def _censor_text(text: str) -> str:
-    """
-    Use Claude to replace PII in extracted text with placeholders.
-    Falls back to regex-based censorship if Bedrock fails.
-    """
     if not text:
         return text
     try:
@@ -118,182 +132,273 @@ def _censor_text(text: str) -> str:
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 1024,
-            "messages": [{
-                "role": "user",
-                "content": (
-                    "You are a privacy protection tool. Replace ALL personally identifiable information (PII) "
-                    "in the following text with these exact placeholders:\n"
-                    "- Full names → [NAME]\n"
-                    "- Malaysian IC numbers (e.g. 901231-14-5678) → [IC NUMBER]\n"
-                    "- Phone numbers (Malaysian or international) → [PHONE NUMBER]\n"
-                    "- Email addresses → [EMAIL]\n"
-                    "- Bank account numbers → [BANK ACCOUNT]\n"
-                    "- Home/office addresses → [ADDRESS]\n"
-                    "- Passport numbers → [PASSPORT]\n\n"
-                    "Keep all other text exactly as-is. Return ONLY the censored text, nothing else.\n\n"
-                    f"Text to censor:\n{text}"
-                ),
-            }],
+            "messages": [{"role": "user", "content": (
+                "You are a privacy protection tool. Replace ALL personally identifiable information (PII) "
+                "in the following text with these exact placeholders:\n"
+                "- Full names -> [NAME]\n"
+                "- Malaysian IC numbers (e.g. 901231-14-5678) -> [IC NUMBER]\n"
+                "- Phone numbers (Malaysian or international) -> [PHONE NUMBER]\n"
+                "- Email addresses -> [EMAIL]\n"
+                "- Bank account numbers -> [BANK ACCOUNT]\n"
+                "- Home/office addresses -> [ADDRESS]\n"
+                "- Passport numbers -> [PASSPORT]\n\n"
+                "Keep all other text exactly as-is. Return ONLY the censored text, nothing else.\n\n"
+                f"Text to censor:\n{text}"
+            )}],
         })
         response = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
-        result = json.loads(response["body"].read())
-        censored = result["content"][0]["text"].strip()
+        censored = json.loads(response["body"].read())["content"][0]["text"].strip()
         return censored if censored else text
     except Exception:
-        # Fallback: regex-based censorship
-        # Malaysian IC: YYMMDD-PB-XXXX
         text = re.sub(r'\b\d{6}-\d{2}-\d{4}\b', '[IC NUMBER]', text)
-        # Phone numbers
         text = re.sub(r'(\+?60|0)[1-9]\d{7,9}', '[PHONE NUMBER]', text)
-        # Email
         text = re.sub(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', '[EMAIL]', text)
+        text = re.sub(r'\b\d{10,16}\b', '[BANK ACCOUNT]', text)
+        text = re.sub(r'\b[A-Za-z]\d{7,9}\b', '[PASSPORT]', text)
         return text
 
 
-def _extract_pii_values(original_text: str, censored_text: str) -> list[str]:
-    """
-    Compare original and censored text to extract the actual PII values that were replaced.
-    Returns a list of original PII strings found.
-    """
-    pii_values = []
-    # Use regex to find what was replaced by placeholders
-    placeholders = [
-        r'\[NAME\]', r'\[IC NUMBER\]', r'\[PHONE NUMBER\]',
-        r'\[EMAIL\]', r'\[BANK ACCOUNT\]', r'\[ADDRESS\]', r'\[PASSPORT\]'
-    ]
-    # Split both texts into tokens and find differences
+def _extract_pii_values(original_text: str, censored_text: str) -> list:
+    if not original_text or not censored_text:
+        return []
+    placeholder_re = re.compile(
+        r'^\[(?:NAME|IC NUMBER|PHONE NUMBER|EMAIL|BANK ACCOUNT|ADDRESS|PASSPORT)\]$'
+    )
     orig_words = original_text.split()
     cens_words = censored_text.split()
+    pii_values = []
 
-    # Simple diff: find spans in original that map to placeholders in censored
-    i, j = 0, 0
-    while i < len(orig_words) and j < len(cens_words):
-        is_placeholder = any(
-            re.match(p.replace('\\[', r'\[').replace('\\]', r'\]'), cens_words[j])
-            for p in placeholders
-        )
-        if is_placeholder:
-            # Collect original words until we find alignment again
-            pii_span = []
-            while i < len(orig_words) and (j + 1 >= len(cens_words) or orig_words[i] != cens_words[j + 1]):
-                pii_span.append(orig_words[i])
-                i += 1
-            if pii_span:
-                pii_values.append(' '.join(pii_span))
-            j += 1
-        else:
-            i += 1
-            j += 1
-
+    matcher = difflib.SequenceMatcher(None, orig_words, cens_words, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "replace":
+            # The censored slice may be one or more placeholder tokens
+            cens_slice = cens_words[j1:j2]
+            if all(placeholder_re.match(t) for t in cens_slice):
+                span = " ".join(orig_words[i1:i2])
+                if span:
+                    pii_values.append(span)
     return pii_values
 
 
-def _censor_image(image_bytes: bytes, content_type: str, pii_values: list[str] = None) -> bytes:
+def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None) -> bytes:
     """
-    Accurate PII censorship using a two-step pipeline:
-    1. AWS Textract — detects every word with pixel-perfect bounding boxes
-    2. Bedrock (Haiku) — classifies which words/phrases are PII
-    3. Pillow — draws tight black redaction boxes over only the PII words
-
-    Falls back to returning the original image if any step fails.
+    Four-layer PII censorship pipeline:
+    1. Textract analyze_document (FORMS+TABLES) - pixel-perfect word boxes + KV pairs
+    2. Regex pre-filter - catches IC, phone, email, passport deterministically
+    3. Bedrock with structured context - KV pairs + line context sent instead of raw word blob
+    4. Pillow - draws tight black boxes over flagged words only
     """
     try:
-        # ── Step 1: Textract — get all words with exact bounding boxes ──
+        # ── Layer 1: Textract analyze_document ──────────────────────────────
         textract = boto3.client(
-            "textract",
-            region_name=AWS_REGION,
+            "textract", region_name=AWS_REGION,
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
         )
-        response = textract.detect_document_text(Document={"Bytes": image_bytes})
+        response = textract.analyze_document(
+            Document={"Bytes": image_bytes},
+            FeatureTypes=["FORMS", "TABLES"],
+        )
+
+        blocks_by_id = {b["Id"]: b for b in response["Blocks"]}
 
         words = []
         for block in response["Blocks"]:
             if block["BlockType"] == "WORD":
                 bb = block["Geometry"]["BoundingBox"]
                 words.append({
+                    "id": block["Id"],
                     "text": block["Text"],
-                    "left":   bb["Left"],
-                    "top":    bb["Top"],
-                    "width":  bb["Width"],
+                    "left": bb["Left"],
+                    "top": bb["Top"],
+                    "width": bb["Width"],
                     "height": bb["Height"],
                 })
 
         if not words:
             return image_bytes
 
-        # ── Step 2: Bedrock — identify which words are PII ──
-        full_text = " ".join(w["text"] for w in words)
+        # Build LINE blocks for context (group words into lines by top position)
+        lines = {}
+        for block in response["Blocks"]:
+            if block["BlockType"] == "LINE":
+                line_words = []
+                for rel in block.get("Relationships", []):
+                    if rel["Type"] == "CHILD":
+                        for wid in rel["Ids"]:
+                            if wid in blocks_by_id and blocks_by_id[wid]["BlockType"] == "WORD":
+                                line_words.append(blocks_by_id[wid]["Text"])
+                if line_words:
+                    line_text = " ".join(line_words)
+                    for wid in [r_id for rel in block.get("Relationships", [])
+                                for r_id in rel["Ids"] if rel["Type"] == "CHILD"]:
+                        lines[wid] = line_text
 
-        # If we already know the PII values from text censorship, use them directly
-        pii_set: set[str] = set()
-        if pii_values:
-            # Normalize for matching
-            for v in pii_values:
-                for token in v.split():
-                    pii_set.add(token.lower().strip(".,!?;:\"'"))
-        else:
-            # Ask Bedrock to identify PII tokens from the full text
-            client = get_bedrock_client()
-            body = json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 512,
-                "messages": [{
-                    "role": "user",
-                    "content": (
-                        "From the following text, extract ONLY the words/tokens that are personally "
-                        "identifiable information (PII): names, IC numbers, phone numbers, emails, "
-                        "bank account numbers, addresses, passport numbers.\n\n"
-                        "Return ONLY a JSON array of the exact PII strings as they appear in the text. "
-                        "Example: [\"Ahmad\", \"bin\", \"Ali\", \"901231-14-5678\", \"0123456789\"]\n\n"
-                        f"Text: {full_text}"
-                    ),
-                }],
-            })
-            r = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
-            raw_text = json.loads(r["body"].read())["content"][0]["text"].strip()
-            if raw_text.startswith("```"):
-                raw_text = raw_text.split("```")[1]
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:]
-                raw_text = raw_text.strip()
-            pii_tokens = json.loads(raw_text)
-            for token in pii_tokens:
-                pii_set.add(token.lower().strip(".,!?;:\"'"))
+        # Extract KV pairs — build structured context list
+        kv_value_ids: set = set()
+        kv_pairs = []  # [{"key": "IC No", "value": "901231-14-5678", "value_ids": [...]}]
 
-        if not pii_set:
-            return image_bytes
+        for block in response["Blocks"]:
+            if block["BlockType"] == "KEY_VALUE_SET" and "KEY" in block.get("EntityTypes", []):
+                key_text = ""
+                for rel in block.get("Relationships", []):
+                    if rel["Type"] == "CHILD":
+                        key_text = " ".join(
+                            blocks_by_id[wid]["Text"]
+                            for wid in rel["Ids"]
+                            if wid in blocks_by_id and blocks_by_id[wid]["BlockType"] == "WORD"
+                        )
 
-        # ── Step 3: Pillow — draw precise redaction boxes ──
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        draw = ImageDraw.Draw(img)
-        iw, ih = img.size
-        pad = 3  # pixels of padding around each word
+                value_text = ""
+                value_word_ids = []
+                for rel in block.get("Relationships", []):
+                    if rel["Type"] == "VALUE":
+                        for val_id in rel["Ids"]:
+                            val_block = blocks_by_id.get(val_id)
+                            if val_block:
+                                for child_rel in val_block.get("Relationships", []):
+                                    if child_rel["Type"] == "CHILD":
+                                        for wid in child_rel["Ids"]:
+                                            if wid in blocks_by_id:
+                                                value_text += blocks_by_id[wid]["Text"] + " "
+                                                value_word_ids.append(wid)
+
+                if key_text and value_text.strip():
+                    kv_pairs.append({
+                        "key": key_text.strip(),
+                        "value": value_text.strip(),
+                        "value_ids": value_word_ids,
+                    })
+                    # Auto-flag values of known PII keys
+                    if any(pk in key_text.lower() for pk in PII_FIELD_KEYS):
+                        kv_value_ids.update(value_word_ids)
+
+        # ── Layer 2: Regex pre-filter ────────────────────────────────────────
+        pii_set: set = set()
+        regex_flagged_ids: set = set()
+        remaining_words = []
 
         for word in words:
-            token = word["text"].lower().strip(".,!?;:\"'")
-            if token in pii_set:
-                x1 = max(0, int(word["left"] * iw) - pad)
-                y1 = max(0, int(word["top"] * ih) - pad)
-                x2 = min(iw, int((word["left"] + word["width"]) * iw) + pad)
-                y2 = min(ih, int((word["top"] + word["height"]) * ih) + pad)
-                draw.rectangle([x1, y1, x2, y2], fill=(0, 0, 0))
+            token = word["text"].strip(".,!?;:\"'()[]")
+            if any(p.match(token) for p in PII_PATTERNS):
+                regex_flagged_ids.add(word["id"])
+                pii_set.add(token.lower())
+            else:
+                remaining_words.append(word)
 
-        out = io.BytesIO()
-        fmt = "JPEG" if content_type in ("image/jpeg", "image/jpg") else "PNG"
-        img.save(out, format=fmt, quality=90)
-        return out.getvalue()
+        # Add tokens from text censorship diff
+        if pii_values:
+            for v in pii_values:
+                for token in v.split():
+                    pii_set.add(token.lower().strip(".,!?;:\"'()[]"))
 
-    except Exception:
-        return image_bytes
+        # ── Layer 3: Bedrock with structured context ─────────────────────────
+        # Build structured prompt: KV pairs + line context for ambiguous words
+        already_flagged = kv_value_ids | regex_flagged_ids
+        ambiguous_words = [w for w in remaining_words if w["id"] not in already_flagged]
 
-        out = io.BytesIO()
-        fmt = "JPEG" if content_type in ("image/jpeg", "image/jpg") else "PNG"
-        img.save(out, format=fmt, quality=90)
-        return out.getvalue()
+        if ambiguous_words:
+            # Build structured context: KV pairs first, then line context
+            structured_lines = []
 
-    except Exception:
-        return image_bytes
+            # Section 1: KV pairs from Textract FORMS
+            if kv_pairs:
+                structured_lines.append("=== Detected Form Fields ===")
+                for kv in kv_pairs:
+                    structured_lines.append(f"  {kv['key']}: {kv['value']}")
+
+            # Section 2: Line context for each ambiguous word
+            structured_lines.append("=== Lines Containing Unclassified Words ===")
+            seen_lines = set()
+            for word in ambiguous_words:
+                line_ctx = lines.get(word["id"], word["text"])
+                if line_ctx not in seen_lines:
+                    structured_lines.append(f"  Line: \"{line_ctx}\"")
+                    seen_lines.add(line_ctx)
+
+            structured_context = "\n".join(structured_lines)
+
+            try:
+                client = get_bedrock_client()
+                body = json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 512,
+                    "messages": [{"role": "user", "content": (
+                        "You are a PII detection tool. Using the structured document context below, "
+                        "identify which of these specific words are personally identifiable information "
+                        "(names, partial names, addresses — NOT phone/IC/email which are already handled):\n\n"
+                        f"Words to classify: {json.dumps([w['text'] for w in ambiguous_words])}\n\n"
+                        f"Document context:\n{structured_context}\n\n"
+                        "Return ONLY a JSON array of the exact PII tokens from the words list above.\n"
+                        "Example: [\"Ahmad\", \"bin\", \"Ali\", \"Jalan\"]\n"
+                        "If none are PII, return: []"
+                    )}],
+                })
+                r = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
+                raw = json.loads(r["body"].read())["content"][0]["text"].strip()
+                if raw.startswith("```"):
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                    raw = raw.strip()
+                for token in json.loads(raw):
+                    pii_set.add(token.lower().strip(".,!?;:\"'()[]"))
+            except Exception as exc:
+                logger.warning(
+                    "_censor_image Layer 3 Bedrock call failed — continuing with Layers 1+2 only: %s",
+                    exc, exc_info=True,
+                )
+
+        # ── Layer 4: Pillow — draw precise redaction boxes ───────────────────
+        pad = 3
+
+        def _redact_frame(frame: "Image.Image") -> "Image.Image":
+            """Apply redaction boxes to a single Pillow frame."""
+            frame = frame.convert("RGBA")
+            draw = ImageDraw.Draw(frame)
+            iw, ih = frame.size
+            for word in words:
+                token = word["text"].lower().strip(".,!?;:\"'()[]")
+                if token in pii_set or word["id"] in kv_value_ids or word["id"] in regex_flagged_ids:
+                    x1 = max(0,  int(word["left"] * iw) - pad)
+                    y1 = max(0,  int(word["top"]  * ih) - pad)
+                    x2 = min(iw, int((word["left"] + word["width"])  * iw) + pad)
+                    y2 = min(ih, int((word["top"]  + word["height"]) * ih) + pad)
+                    draw.rectangle([x1, y1, x2, y2], fill=(0, 0, 0, 255))
+            return frame
+
+        if content_type == "image/gif":
+            src = Image.open(io.BytesIO(image_bytes))
+            gif_frames = []
+            durations = []
+            try:
+                while True:
+                    redacted = _redact_frame(src.copy())
+                    gif_frames.append(redacted.convert("P", palette=Image.ADAPTIVE))
+                    durations.append(src.info.get("duration", 100))
+                    src.seek(src.tell() + 1)
+            except EOFError:
+                pass
+            out = io.BytesIO()
+            gif_frames[0].save(
+                out, format="GIF", save_all=True, append_images=gif_frames[1:],
+                loop=src.info.get("loop", 0), duration=durations, disposal=2,
+            )
+            return out.getvalue()
+        else:
+            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            img = _redact_frame(img).convert("RGB")
+            out = io.BytesIO()
+            fmt = "JPEG" if content_type in ("image/jpeg", "image/jpg") else "PNG"
+            img.save(out, format=fmt, quality=90)
+            return out.getvalue()
+
+    except Exception as exc:
+        logger.error(
+            "_censor_image pipeline failed — refusing to return uncensored bytes: %s",
+            exc, exc_info=True,
+        )
+        raise
 
 
 # ─────────────────────────────────────────────
@@ -313,9 +418,8 @@ class PostResponse(BaseModel):
     indicators: list[str]
     image_url: str | None
     upvote_count: int
-    has_upvoted: bool   # whether the current user has upvoted this post
+    has_upvoted: bool
     created_at: str
-
     model_config = {"from_attributes": True}
 
 
@@ -341,47 +445,40 @@ async def create_post(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Create a community post with optional image upload.
-    If an image is provided and no original_message is set,
-    Bedrock will extract the suspicious message text from the image automatically.
-    """
     if not caption and not original_message and not image:
         raise HTTPException(status_code=400, detail="Post must have content or an image.")
 
     image_key = None
-    image_bytes = None
-    image_content_type = None
 
     if image:
         if image.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(status_code=400,
+                detail=f"Unsupported image type '{image.content_type}'. Allowed: JPEG, PNG, WEBP, GIF.")
+        image_bytes = await image.read()
+        if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported image type '{image.content_type}'. Allowed: JPEG, PNG, WEBP, GIF."
+                detail=f"Image exceeds the {MAX_IMAGE_SIZE_BYTES // (1024 * 1024)} MB size limit.",
             )
-        image_bytes = await image.read()
         image_content_type = image.content_type
         ext = image.filename.rsplit(".", 1)[-1] if "." in image.filename else "jpg"
         image_key = f"community/{current_user.id}/{uuid.uuid4()}.{ext}"
 
-        # Step 1: Extract text from original image
         extracted_raw = ""
         if not original_message:
             extracted_raw = _extract_message_from_image(image_bytes, image_content_type)
 
-        # Step 2: Censor PII in extracted text
         if extracted_raw:
             censored_text = _censor_text(extracted_raw)
             original_message = censored_text
-            # Step 3: Find what PII values were replaced (to guide image censorship)
             pii_values = _extract_pii_values(extracted_raw, censored_text)
         else:
             pii_values = []
 
-        # Step 4: Censor image — pass known PII values for targeted redaction
-        censored_bytes = _censor_image(image_bytes, image_content_type, pii_values or None)
-
-        # Step 5: Upload only the censored image to S3
+        try:
+            censored_bytes = _censor_image(image_bytes, image_content_type, pii_values or None)
+        except Exception:
+            raise HTTPException(status_code=500, detail="Image censorship failed. Upload rejected to protect privacy.")
         _upload_to_s3(censored_bytes, image.content_type, image_key)
 
     post = CommunityPost(
@@ -402,67 +499,44 @@ async def create_post(
     indicators_list = json.loads(indicators) if indicators else []
 
     return PostResponse(
-        id=post.id,
-        user_id=post.user_id,
+        id=post.id, user_id=post.user_id,
         author_name=current_user.full_name or current_user.username,
-        caption=post.caption,
-        scam_type=post.scam_type,
-        original_message=post.original_message,
-        note=post.note,
-        risk_score=post.risk_score,
-        risk_level=post.risk_level,
-        indicators=indicators_list,
-        image_url=image_url,
-        upvote_count=0,
-        has_upvoted=False,
+        caption=post.caption, scam_type=post.scam_type,
+        original_message=post.original_message, note=post.note,
+        risk_score=post.risk_score, risk_level=post.risk_level,
+        indicators=indicators_list, image_url=image_url,
+        upvote_count=0, has_upvoted=False,
         created_at=post.created_at.isoformat(),
     )
 
 
 @router.get("/posts", response_model=PostListResponse)
 async def list_posts(
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = 20, offset: int = 0,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    """List community posts sorted by upvote count (highest first). Public endpoint."""
-
-    # Total count
     count_result = await db.execute(
         select(func.count()).select_from(CommunityPost).where(CommunityPost.is_published == True)
     )
     total = count_result.scalar()
 
-    # Upvote count subquery
-    upvote_count_sq = (
+    upvote_sq = (
         select(PostUpvote.post_id, func.count(PostUpvote.id).label("upvote_count"))
-        .group_by(PostUpvote.post_id)
-        .subquery()
+        .group_by(PostUpvote.post_id).subquery()
     )
-
-    # Posts with author info and upvote count, sorted by upvotes desc then newest
     result = await db.execute(
-        select(
-            CommunityPost,
-            User.username,
-            User.full_name,
-            func.coalesce(upvote_count_sq.c.upvote_count, 0).label("upvote_count"),
-        )
+        select(CommunityPost, User.username, User.full_name,
+               func.coalesce(upvote_sq.c.upvote_count, 0).label("upvote_count"))
         .join(User, CommunityPost.user_id == User.id)
-        .outerjoin(upvote_count_sq, CommunityPost.id == upvote_count_sq.c.post_id)
+        .outerjoin(upvote_sq, CommunityPost.id == upvote_sq.c.post_id)
         .where(CommunityPost.is_published == True)
-        .order_by(
-            desc(func.coalesce(upvote_count_sq.c.upvote_count, 0)),
-            desc(CommunityPost.created_at),
-        )
-        .limit(limit)
-        .offset(offset)
+        .order_by(desc(func.coalesce(upvote_sq.c.upvote_count, 0)), desc(CommunityPost.created_at))
+        .limit(limit).offset(offset)
     )
     rows = result.all()
 
-    # Get current user's upvoted post IDs for has_upvoted flag
-    upvoted_ids: set[str] = set()
+    upvoted_ids: set = set()
     if current_user:
         upvoted_result = await db.execute(
             select(PostUpvote.post_id).where(PostUpvote.user_id == current_user.id)
@@ -471,90 +545,65 @@ async def list_posts(
 
     posts = []
     for post, username, full_name, upvote_count in rows:
-        image_url = _get_presigned_url(post.image_key) if post.image_key else None
+        image_url = _build_s3_url(post.image_key) if post.image_key else None
         try:
             indicators_list = json.loads(post.indicators) if post.indicators else []
         except (json.JSONDecodeError, TypeError):
             indicators_list = []
-
         posts.append(PostResponse(
-            id=post.id,
-            user_id=post.user_id,
-            author_name=full_name or username,
-            caption=post.caption,
-            scam_type=post.scam_type,
-            original_message=post.original_message,
-            note=post.note,
-            risk_score=post.risk_score,
-            risk_level=post.risk_level,
-            indicators=indicators_list,
-            image_url=image_url,
-            upvote_count=upvote_count,
-            has_upvoted=post.id in upvoted_ids,
+            id=post.id, user_id=post.user_id, author_name=full_name or username,
+            caption=post.caption, scam_type=post.scam_type,
+            original_message=post.original_message, note=post.note,
+            risk_score=post.risk_score, risk_level=post.risk_level,
+            indicators=indicators_list, image_url=image_url,
+            upvote_count=upvote_count, has_upvoted=post.id in upvoted_ids,
             created_at=post.created_at.isoformat(),
         ))
-
     return PostListResponse(posts=posts, total=total)
 
 
 @router.get("/posts/mine", response_model=PostListResponse)
 async def list_my_posts(
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = 20, offset: int = 0,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List posts created by the current user, sorted by newest first."""
     count_result = await db.execute(
         select(func.count()).select_from(CommunityPost)
         .where(CommunityPost.user_id == current_user.id, CommunityPost.is_published == True)
     )
     total = count_result.scalar()
 
-    upvote_count_sq = (
+    upvote_sq = (
         select(PostUpvote.post_id, func.count(PostUpvote.id).label("upvote_count"))
-        .group_by(PostUpvote.post_id)
-        .subquery()
+        .group_by(PostUpvote.post_id).subquery()
     )
-
     result = await db.execute(
-        select(
-            CommunityPost,
-            func.coalesce(upvote_count_sq.c.upvote_count, 0).label("upvote_count"),
-        )
-        .outerjoin(upvote_count_sq, CommunityPost.id == upvote_count_sq.c.post_id)
+        select(CommunityPost, func.coalesce(upvote_sq.c.upvote_count, 0).label("upvote_count"))
+        .outerjoin(upvote_sq, CommunityPost.id == upvote_sq.c.post_id)
         .where(CommunityPost.user_id == current_user.id, CommunityPost.is_published == True)
         .order_by(desc(CommunityPost.created_at))
-        .limit(limit)
-        .offset(offset)
+        .limit(limit).offset(offset)
     )
     rows = result.all()
 
     posts = []
     for post, upvote_count in rows:
-        image_url = _get_presigned_url(post.image_key) if post.image_key else None
+        image_url = _build_s3_url(post.image_key) if post.image_key else None
         try:
             indicators_list = json.loads(post.indicators) if post.indicators else []
         except (json.JSONDecodeError, TypeError):
             indicators_list = []
-
         posts.append(PostResponse(
-            id=post.id,
-            user_id=post.user_id,
+            id=post.id, user_id=post.user_id,
             author_name=current_user.full_name or current_user.username,
-            caption=post.caption,
-            scam_type=post.scam_type,
-            original_message=post.original_message,
-            note=post.note,
-            risk_score=post.risk_score,
-            risk_level=post.risk_level,
-            indicators=indicators_list,
-            image_url=image_url,
-            upvote_count=upvote_count,
-            has_upvoted=False,  # own posts — upvote button is hidden anyway
+            caption=post.caption, scam_type=post.scam_type,
+            original_message=post.original_message, note=post.note,
+            risk_score=post.risk_score, risk_level=post.risk_level,
+            indicators=indicators_list, image_url=image_url,
+            upvote_count=upvote_count, has_upvoted=False,
             created_at=post.created_at.isoformat(),
         ))
-
     return PostListResponse(posts=posts, total=total)
 
 
@@ -564,7 +613,6 @@ async def upvote_post(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Toggle upvote on a post. Cannot upvote own post. Returns new upvote count."""
     post = (await db.execute(select(CommunityPost).where(CommunityPost.id == post_id))).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -576,7 +624,6 @@ async def upvote_post(
     )).scalar_one_or_none()
 
     if existing:
-        # Already upvoted — remove it (toggle off)
         await db.delete(existing)
         has_upvoted = False
     else:
@@ -584,13 +631,10 @@ async def upvote_post(
         has_upvoted = True
 
     await db.flush()
-
     count_result = await db.execute(
         select(func.count(PostUpvote.id)).where(PostUpvote.post_id == post_id)
     )
-    upvote_count = count_result.scalar()
-
-    return {"upvote_count": upvote_count, "has_upvoted": has_upvoted}
+    return {"upvote_count": count_result.scalar(), "has_upvoted": has_upvoted}
 
 
 @router.delete("/posts/{post_id}", status_code=204)
@@ -599,7 +643,6 @@ async def delete_post(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a post. Only the author can delete their own post."""
     post = (await db.execute(select(CommunityPost).where(CommunityPost.id == post_id))).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found.")
@@ -611,5 +654,4 @@ async def delete_post(
             _get_s3_client().delete_object(Bucket=S3_BUCKET, Key=post.image_key)
         except Exception:
             pass
-
     await db.delete(post)
