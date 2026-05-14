@@ -32,6 +32,7 @@ export default function ShareModal({ analysisData, onClose }) {
       formData.append('risk_level', analysisData.risk_level)
       formData.append('indicators', JSON.stringify(analysisData.indicators || []))
       formData.append('scam_type', analysisData.risk_level)
+      formData.append('is_anonymous', anonymous ? 'true' : 'false')
       if (note.trim()) formData.append('note', note.trim())
       if (includeImage && analysisData.imageFile) {
         formData.append('image', analysisData.imageFile)

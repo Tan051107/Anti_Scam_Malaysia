@@ -55,6 +55,10 @@ PII_PATTERNS = [
     re.compile(r'^[A-Z]\d{7,9}$'),
     re.compile(r'^\+?\d[\d\s\-]{8,14}\d$'),
     re.compile(r'^\d{3,4}[-\s]?\d{3,4}[-\s]?\d{3,4}$'),
+    # URLs: full http(s):// links, www. links, or bare domains with paths
+    re.compile(r'^https?://\S*$', re.IGNORECASE),
+    re.compile(r'^www\.\S+\.\S*$', re.IGNORECASE),
+    re.compile(r'^[a-zA-Z0-9\-]+\.(com|net|org|io|my|co|info|biz|xyz|top|club|site|online|shop|link|click|live|app|web|tech|store|vip|pro|cc|tv|me|us|uk|sg|id|ph|th|vn)(/\S*)?$'),
 ]
 
 
@@ -141,7 +145,8 @@ def _censor_text(text: str) -> str:
                 "- Email addresses -> [EMAIL]\n"
                 "- Bank account numbers -> [BANK ACCOUNT]\n"
                 "- Home/office addresses -> [ADDRESS]\n"
-                "- Passport numbers -> [PASSPORT]\n\n"
+                "- Passport numbers -> [PASSPORT]\n"
+                "- URLs and web links (http, https, www, or any domain link) -> [URL]\n\n"
                 "Keep all other text exactly as-is. Return ONLY the censored text, nothing else.\n\n"
                 f"Text to censor:\n{text}"
             )}],
@@ -155,6 +160,7 @@ def _censor_text(text: str) -> str:
         text = re.sub(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}', '[EMAIL]', text)
         text = re.sub(r'\b\d{10,16}\b', '[BANK ACCOUNT]', text)
         text = re.sub(r'\b[A-Za-z]\d{7,9}\b', '[PASSPORT]', text)
+        text = re.sub(r'https?://[^\s]+|www\.[^\s]+', '[URL]', text)
         return text
 
 
@@ -162,7 +168,7 @@ def _extract_pii_values(original_text: str, censored_text: str) -> list:
     if not original_text or not censored_text:
         return []
     placeholder_re = re.compile(
-        r'^\[(?:NAME|IC NUMBER|PHONE NUMBER|EMAIL|BANK ACCOUNT|ADDRESS|PASSPORT)\]$'
+        r'^\[(?:NAME|IC NUMBER|PHONE NUMBER|EMAIL|BANK ACCOUNT|ADDRESS|PASSPORT|URL)\]$'
     )
     orig_words = original_text.split()
     cens_words = censored_text.split()
@@ -278,6 +284,7 @@ def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None
         regex_flagged_ids: set = set()
         remaining_words = []
 
+        # Word-level patterns (single-token PII)
         for word in words:
             token = word["text"].strip(".,!?;:\"'()[]")
             if any(p.match(token) for p in PII_PATTERNS):
@@ -285,6 +292,37 @@ def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None
                 pii_set.add(token.lower())
             else:
                 remaining_words.append(word)
+
+        # Line-level phone scan — catches numbers split across tokens by Textract
+        # e.g. "+1 (307) 209-2175" → tokens "+1", "(307)", "209-2175" each fail
+        # word-level patterns but the full line text matches a phone pattern.
+        LINE_PHONE_PATTERNS = [
+            # International: +1 (307) 209-2175, +44 7911 123456, etc.
+            re.compile(r'(\+\d{1,3}[\s\-.]?\(?\d{1,4}\)?[\s\-.]?\d{3,5}[\s\-.]?\d{3,5})'),
+            # Malaysian: 012-345 6789, 03-1234 5678, +60 12-345 6789
+            re.compile(r'(\+?6?0[\s\-]?\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4})'),
+            # Generic: any sequence of digits/spaces/dashes/parens that looks like a phone
+            re.compile(r'(\(?\d{3}\)?[\s\-\.]\d{3}[\s\-\.]\d{4})'),
+        ]
+        # Build reverse map: word_id → line block (need word_ids per line)
+        line_word_ids: dict = {}  # line_text → [word_ids]
+        for block in response["Blocks"]:
+            if block["BlockType"] == "LINE":
+                wids = []
+                for rel in block.get("Relationships", []):
+                    if rel["Type"] == "CHILD":
+                        for wid in rel["Ids"]:
+                            if wid in blocks_by_id and blocks_by_id[wid]["BlockType"] == "WORD":
+                                wids.append(wid)
+                if wids:
+                    line_text = " ".join(blocks_by_id[wid]["Text"] for wid in wids)
+                    # Strip common punctuation for matching
+                    clean_line = line_text.replace("(", "").replace(")", "")
+                    if any(p.search(clean_line) for p in LINE_PHONE_PATTERNS):
+                        for wid in wids:
+                            regex_flagged_ids.add(wid)
+                            # Remove from remaining_words if it was added there
+                        remaining_words = [w for w in remaining_words if w["id"] not in regex_flagged_ids]
 
         # Add tokens from text censorship diff
         if pii_values:
@@ -325,12 +363,15 @@ def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None
                     "max_tokens": 512,
                     "messages": [{"role": "user", "content": (
                         "You are a PII detection tool. Using the structured document context below, "
-                        "identify which of these specific words are personally identifiable information "
-                        "(names, partial names, addresses — NOT phone/IC/email which are already handled):\n\n"
+                        "identify which of these specific words are personally identifiable information. "
+                        "Flag ALL of the following regardless of where they appear in the document:\n"
+                        "- Personal names (first names, last names, full names, partial names)\n"
+                        "- Physical addresses (street names, house numbers, city names, postcodes)\n"
+                        "- Any other PII not already handled (phone/IC/email are already redacted)\n\n"
                         f"Words to classify: {json.dumps([w['text'] for w in ambiguous_words])}\n\n"
                         f"Document context:\n{structured_context}\n\n"
                         "Return ONLY a JSON array of the exact PII tokens from the words list above.\n"
-                        "Example: [\"Ahmad\", \"bin\", \"Ali\", \"Jalan\"]\n"
+                        "Example: [\"Ahmad\", \"bin\", \"Ali\", \"Jalan\", \"Ampang\"]\n"
                         "If none are PII, return: []"
                     )}],
                 })
@@ -419,6 +460,7 @@ class PostResponse(BaseModel):
     image_url: str | None
     upvote_count: int
     has_upvoted: bool
+    is_anonymous: bool
     created_at: str
     model_config = {"from_attributes": True}
 
@@ -441,6 +483,7 @@ async def create_post(
     risk_score: Optional[int] = Form(None),
     risk_level: Optional[str] = Form(None),
     indicators: Optional[str] = Form(None),
+    is_anonymous: bool = Form(False),
     image: Optional[UploadFile] = File(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -472,6 +515,11 @@ async def create_post(
             censored_text = _censor_text(extracted_raw)
             original_message = censored_text
             pii_values = _extract_pii_values(extracted_raw, censored_text)
+        elif original_message:
+            # User supplied the message text — censor it and extract PII hints for image redaction
+            censored_text = _censor_text(original_message)
+            pii_values = _extract_pii_values(original_message, censored_text)
+            original_message = censored_text
         else:
             pii_values = []
 
@@ -491,6 +539,7 @@ async def create_post(
         risk_level=risk_level,
         indicators=indicators,
         image_key=image_key,
+        is_anonymous=is_anonymous,
     )
     db.add(post)
     await db.flush()
@@ -500,12 +549,13 @@ async def create_post(
 
     return PostResponse(
         id=post.id, user_id=post.user_id,
-        author_name=current_user.full_name or current_user.username,
+        author_name="Anonymous" if is_anonymous else (current_user.full_name or current_user.username),
         caption=post.caption, scam_type=post.scam_type,
         original_message=post.original_message, note=post.note,
         risk_score=post.risk_score, risk_level=post.risk_level,
         indicators=indicators_list, image_url=image_url,
         upvote_count=0, has_upvoted=False,
+        is_anonymous=post.is_anonymous,
         created_at=post.created_at.isoformat(),
     )
 
@@ -545,18 +595,20 @@ async def list_posts(
 
     posts = []
     for post, username, full_name, upvote_count in rows:
-        image_url = _build_s3_url(post.image_key) if post.image_key else None
+        image_url = _get_presigned_url(post.image_key) if post.image_key else None
         try:
             indicators_list = json.loads(post.indicators) if post.indicators else []
         except (json.JSONDecodeError, TypeError):
             indicators_list = []
         posts.append(PostResponse(
-            id=post.id, user_id=post.user_id, author_name=full_name or username,
+            id=post.id, user_id=post.user_id,
+            author_name="Anonymous" if post.is_anonymous else (full_name or username),
             caption=post.caption, scam_type=post.scam_type,
             original_message=post.original_message, note=post.note,
             risk_score=post.risk_score, risk_level=post.risk_level,
             indicators=indicators_list, image_url=image_url,
             upvote_count=upvote_count, has_upvoted=post.id in upvoted_ids,
+            is_anonymous=post.is_anonymous,
             created_at=post.created_at.isoformat(),
         ))
     return PostListResponse(posts=posts, total=total)
@@ -589,7 +641,7 @@ async def list_my_posts(
 
     posts = []
     for post, upvote_count in rows:
-        image_url = _build_s3_url(post.image_key) if post.image_key else None
+        image_url = _get_presigned_url(post.image_key) if post.image_key else None
         try:
             indicators_list = json.loads(post.indicators) if post.indicators else []
         except (json.JSONDecodeError, TypeError):
@@ -602,6 +654,7 @@ async def list_my_posts(
             risk_score=post.risk_score, risk_level=post.risk_level,
             indicators=indicators_list, image_url=image_url,
             upvote_count=upvote_count, has_upvoted=False,
+            is_anonymous=post.is_anonymous,
             created_at=post.created_at.isoformat(),
         ))
     return PostListResponse(posts=posts, total=total)

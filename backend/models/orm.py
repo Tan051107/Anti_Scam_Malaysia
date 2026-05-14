@@ -76,6 +76,7 @@ class CommunityPost(Base):
     indicators: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array stored as text
     # S3 object key — never store the full URL, generate pre-signed URLs on demand
     image_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_anonymous: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

@@ -114,7 +114,14 @@ function PostCard({ post, onDelete, onUpvote, currentUser, lang, t }) {
               {post.author_name[0].toUpperCase()}
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-800">{post.author_name}</p>
+              <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                {post.author_name}
+                {post.is_anonymous && (
+                  <span className="text-xs font-normal bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
+                    anonymous
+                  </span>
+                )}
+              </p>
               <p className="text-xs text-gray-400">{timeAgo(post.created_at, lang)}</p>
             </div>
           </div>
