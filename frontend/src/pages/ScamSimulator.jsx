@@ -164,7 +164,7 @@ export default function ScamSimulator() {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="bg-red-600 p-2 rounded-lg">
+          <div className="bg-brand-secondary p-2 rounded-lg">
             <Play className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -197,7 +197,7 @@ export default function ScamSimulator() {
           </span>
           <button
             onClick={handleReset}
-            className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+          className="flex-shrink-0 bg-brand-primary hover:bg-brand-primary-dark text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
           >
             {t('sim_try_again')}
           </button>
@@ -245,7 +245,7 @@ export default function ScamSimulator() {
           <button
             onClick={handleStart}
             disabled={loading}
-            className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-brand-secondary hover:bg-brand-secondary-dark disabled:bg-gray-300 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             {loading ? (
               <><Loader2 className="w-5 h-5 animate-spin" /> {t('sim_loading')}</>
@@ -260,7 +260,7 @@ export default function ScamSimulator() {
             </div>
             <button
               onClick={() => setShowReport(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-3 rounded-xl text-sm transition-colors"
+              className="bg-brand-primary hover:bg-brand-primary-dark text-white font-bold px-4 py-3 rounded-xl text-sm transition-colors"
             >
               {t('sim_view_report')}
             </button>
@@ -288,7 +288,7 @@ export default function ScamSimulator() {
             <button
               onClick={handleSend}
               disabled={loading || !input.trim()}
-              className="bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white p-2 rounded-lg transition-colors flex-shrink-0"
+              className="bg-brand-secondary hover:bg-brand-secondary-dark disabled:bg-gray-300 text-white p-2 rounded-lg transition-colors flex-shrink-0"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </button>
@@ -371,7 +371,7 @@ export default function ScamSimulator() {
               <div className="flex gap-3">
                 <button
                   onClick={handleReset}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 bg-brand-primary hover:bg-brand-primary-dark text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
                 >
                   <RotateCcw className="w-4 h-4" />
                   {t('sim_try_again')}

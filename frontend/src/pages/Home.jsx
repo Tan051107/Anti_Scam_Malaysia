@@ -27,7 +27,7 @@ export default function Home() {
         ? 'Tampal mesej, URL, nombor telefon atau e-mel yang mencurigakan. AI kami menganalisis petanda penipuan dengan segera.'
         : 'Paste suspicious messages, URLs, phone numbers, or emails. Our AI analyzes them for scam indicators instantly.',
       link: '/analysis',
-      color: 'bg-blue-600',
+      color: 'bg-brand-primary',
       badge: 'AI Powered',
     },
     {
@@ -81,7 +81,7 @@ export default function Home() {
   return (
     <div className="flex flex-col">
       {/* Hero */}
-      <section className="bg-gradient-to-br from-brand-primary via-blue-800 to-brand-primary text-white py-20 px-4">
+      <section className="bg-gradient-to-br from-brand-primary via-brand-primary-mid to-brand-primary text-white py-20 px-4">
         <div className="max-w-4xl mx-auto text-center">
           <div className="flex justify-center mb-6">
             <div className="bg-brand-secondary p-4 rounded-2xl shadow-2xl">
@@ -98,7 +98,7 @@ export default function Home() {
             {t('hero_desc')}
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/analysis" className="bg-brand-secondary hover:bg-red-700 text-white font-bold px-8 py-3 rounded-xl transition-colors shadow-lg">
+            <Link to="/analysis" className="bg-brand-secondary hover:bg-brand-secondary-dark text-white font-bold px-8 py-3 rounded-xl transition-colors shadow-lg">
               {t('hero_analyze')}
             </Link>
             <Link to="/simulator" className="bg-white hover:bg-gray-100 text-brand-primary font-bold px-8 py-3 rounded-xl transition-colors shadow-lg">
@@ -161,7 +161,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-3xl font-bold text-gray-900">{t('recent_scam_title')}</h2>
-            <Link to="/community" className="text-blue-600 hover:underline text-sm font-semibold">
+            <Link to="/community" className="text-brand-primary hover:underline text-sm font-semibold">
               {t('recent_scam_view_all')}
             </Link>
           </div>
@@ -171,7 +171,7 @@ export default function Home() {
             <div className="text-center py-10 bg-white rounded-2xl border border-gray-200">
               <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
               <p className="text-gray-400 text-sm">{t('recent_scam_empty')}</p>
-              <Link to="/analysis" className="mt-3 inline-block text-blue-600 text-sm font-semibold hover:underline">
+              <Link to="/analysis" className="mt-3 inline-block text-brand-primary text-sm font-semibold hover:underline">
                 {lang === 'ms' ? 'Analisis mesej mencurigakan →' : 'Analyze a suspicious message →'}
               </Link>
             </div>
@@ -233,7 +233,7 @@ export default function Home() {
           <div className="grid sm:grid-cols-3 gap-4 text-sm">
             {[
               { label: lang === 'ms' ? 'Kecemasan' : 'Emergency', number: '997',           color: 'bg-red-600' },
-              { label: 'CCID Polis Malaysia',                      number: '03-2610 5000',  color: 'bg-blue-700' },
+              { label: 'CCID Polis Malaysia',                      number: '03-2610 5000',  color: 'bg-brand-secondary' },
               { label: 'BNM TELELINK',                             number: '1-300-88-5465', color: 'bg-green-700' },
             ].map((item) => (
               <div key={item.number} className={`${item.color} text-white rounded-xl py-3 px-4`}>

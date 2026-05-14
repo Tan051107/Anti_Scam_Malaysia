@@ -144,7 +144,7 @@ export default function AnalysisBot() {
     <div className="h-[calc(100vh-5rem)] flex flex-col">
       {/* Page header */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
-        <div className="bg-blue-600 p-2 rounded-lg">
+        <div className="bg-brand-secondary p-2 rounded-lg">
           <AlertCircle className="w-5 h-5 text-white" />
         </div>
         <div>
@@ -204,7 +204,7 @@ export default function AnalysisBot() {
             <div className="flex items-end gap-2 bg-gray-100 rounded-xl px-3 py-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0 mb-1"
+                className="text-gray-400 hover:text-brand-primary transition-colors flex-shrink-0 mb-1"
                 title="Attach image"
               >
                 <Paperclip className="w-5 h-5" />
@@ -225,7 +225,7 @@ export default function AnalysisBot() {
               <button
                 onClick={handleSend}
                 disabled={loading || (!input.trim() && !attachedFile)}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white p-2 rounded-lg transition-colors flex-shrink-0"
+                className="bg-brand-primary hover:bg-brand-primary-dark disabled:bg-gray-300 text-white p-2 rounded-lg transition-colors flex-shrink-0"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>

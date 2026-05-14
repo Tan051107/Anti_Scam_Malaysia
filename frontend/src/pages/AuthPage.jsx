@@ -125,7 +125,7 @@ export default function AuthPage({ mode = 'login' }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-brand-secondary hover:bg-red-700 disabled:bg-gray-300 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+              className="w-full bg-brand-secondary hover:bg-brand-secondary-dark disabled:bg-gray-300 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               {isLogin ? t('login_btn') : t('signup_btn')}
@@ -135,7 +135,7 @@ export default function AuthPage({ mode = 'login' }) {
               {isLogin ? t('login_no_account') : t('signup_have_account')}{' '}
               <Link
                 to={isLogin ? '/signup' : '/login'}
-                className="text-blue-600 font-semibold hover:underline"
+                className="text-brand-primary font-semibold hover:underline"
               >
                 {isLogin ? t('login_signup_link') : t('signup_login_link')}
               </Link>

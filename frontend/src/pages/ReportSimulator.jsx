@@ -499,7 +499,7 @@ export default function ReportSimulator() {
               <button
                 onClick={handleExportPdf}
                 disabled={exporting}
-                className="flex-1 bg-brand-primary hover:bg-blue-800 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="flex-1 bg-brand-primary hover:bg-brand-primary-dark disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 <Download className="w-5 h-5" />
                 {exporting ? t('report_exporting') : t('report_export_btn')}

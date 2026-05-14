@@ -200,9 +200,9 @@ function PostCard({ post, onDelete, onUpvote, currentUser, lang, t }) {
               }
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all
                 ${post.has_upvoted
-                  ? 'bg-blue-600 text-white shadow-sm'
+                  ? 'bg-brand-primary text-white shadow-sm'
                   : currentUser
-                    ? 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+                    ? 'bg-gray-100 text-gray-600 hover:bg-brand-primary/10 hover:text-brand-primary'
                     : 'bg-gray-50 text-gray-300 cursor-not-allowed'
                 }`}
             >
@@ -317,7 +317,7 @@ export default function Community() {
             {user ? (
               <Link
                 to="/analysis"
-                className="bg-brand-accent hover:bg-yellow-400 text-brand-primary font-bold text-sm px-4 py-2 rounded-xl transition-colors"
+                className="bg-brand-accent hover:bg-brand-accent-dark text-brand-primary font-bold text-sm px-4 py-2 rounded-xl transition-colors"
               >
                 + {t('community_share')}
               </Link>
@@ -383,7 +383,7 @@ export default function Community() {
 
         {loading && posts.length === 0 ? (
           <div className="flex justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <Loader2 className="w-8 h-8 animate-spin text-brand-primary" />
           </div>
         ) : posts.length === 0 ? (
           <div className="text-center py-20">
@@ -394,7 +394,7 @@ export default function Community() {
                 : t('community_empty')
               }
             </p>
-            <Link to="/analysis" className="mt-4 inline-block text-blue-600 font-semibold hover:underline text-sm">
+            <Link to="/analysis" className="mt-4 inline-block text-brand-primary font-semibold hover:underline text-sm">
               {t('community_share')} →
             </Link>
           </div>
@@ -419,7 +419,7 @@ export default function Community() {
                 <button
                   onClick={() => fetchPosts(activeTab, offset + LIMIT)}
                   disabled={loading}
-                  className="bg-brand-primary hover:bg-blue-800 text-white font-bold px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2 mx-auto"
+                className="bg-brand-primary hover:bg-brand-primary-dark text-white font-bold px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2 mx-auto"
                 >
                   {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                   {t('community_load_more')}
