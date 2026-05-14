@@ -53,7 +53,7 @@ export default function ShareModal({ analysisData, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <Share2 className="w-5 h-5 text-blue-600" />
+            <Share2 className="w-5 h-5 text-brand-primary" />
             <h2 className="font-bold text-gray-900">{t('share_title')}</h2>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -76,14 +76,14 @@ export default function ShareModal({ analysisData, onClose }) {
                 <Link
                   to="/login?from=/analysis"
                   onClick={onClose}
-                  className="bg-brand-primary hover:bg-blue-800 text-white font-bold px-5 py-2 rounded-xl text-sm transition-colors"
+                  className="bg-brand-primary hover:bg-brand-primary-dark text-white font-bold px-5 py-2 rounded-xl text-sm transition-colors"
                 >
                   {t('nav_login')}
                 </Link>
                 <Link
                   to="/signup?from=/analysis"
                   onClick={onClose}
-                  className="bg-brand-secondary hover:bg-red-700 text-white font-bold px-5 py-2 rounded-xl text-sm transition-colors"
+                  className="bg-brand-secondary hover:bg-brand-secondary-dark text-white font-bold px-5 py-2 rounded-xl text-sm transition-colors"
                 >
                   {t('nav_signup')}
                 </Link>
@@ -155,7 +155,7 @@ export default function ShareModal({ analysisData, onClose }) {
                 <button
                   onClick={handleShare}
                   disabled={loading}
-                  className="flex-1 bg-brand-primary hover:bg-blue-800 disabled:bg-gray-300 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+                className="flex-1 bg-brand-primary hover:bg-brand-primary-dark disabled:bg-gray-300 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
                 >
                   {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                   {loading

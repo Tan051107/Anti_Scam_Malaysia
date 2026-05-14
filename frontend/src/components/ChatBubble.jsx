@@ -34,7 +34,7 @@ export default function ChatBubble({ message, isBot, timestamp, imageUrl }) {
   if (isBot) {
     return (
       <div className="flex items-start gap-2 max-w-[85%]">
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center mt-1">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-brand-secondary flex items-center justify-center mt-1">
           <Bot className="w-4 h-4 text-white" />
         </div>
         <div>

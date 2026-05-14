@@ -37,7 +37,7 @@ export default function ConfirmDialog({
   const variantStyles = {
     danger:  { icon: 'bg-red-100 text-red-600',    btn: 'bg-red-600 hover:bg-red-700',    border: 'border-red-200' },
     warning: { icon: 'bg-yellow-100 text-yellow-600', btn: 'bg-yellow-500 hover:bg-yellow-600', border: 'border-yellow-200' },
-    info:    { icon: 'bg-blue-100 text-blue-600',   btn: 'bg-blue-600 hover:bg-blue-700',  border: 'border-blue-200' },
+    info:    { icon: 'bg-brand-primary/10 text-brand-primary', btn: 'bg-brand-primary hover:bg-brand-primary-dark', border: 'border-brand-primary/20' },
   }
   const s = variantStyles[variant] || variantStyles.danger
 

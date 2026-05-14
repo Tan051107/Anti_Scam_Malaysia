@@ -35,7 +35,7 @@ export default function Navbar() {
 
           {/* Brand */}
           <Link to="/" className="flex items-center gap-2 group flex-shrink-0">
-            <div className="bg-brand-secondary p-1.5 rounded-lg group-hover:bg-red-700 transition-colors">
+            <div className="bg-brand-secondary p-1.5 rounded-lg group-hover:bg-brand-secondary-dark transition-colors">
               <Shield className="w-5 h-5 text-white" />
             </div>
             <div className="leading-tight">
@@ -55,7 +55,7 @@ export default function Navbar() {
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                     active
                       ? 'bg-brand-secondary text-white'
-                      : 'text-blue-100 hover:bg-blue-700 hover:text-white'
+                      : 'text-white/80 hover:bg-brand-primary-dark hover:text-white'
                   }`}
                 >
                   {link.label}
@@ -84,11 +84,11 @@ export default function Navbar() {
                   <div className="w-6 h-6 rounded-full bg-brand-accent flex items-center justify-center text-brand-primary font-bold text-xs">
                     {user.display_name[0].toUpperCase()}
                   </div>
-                  <span className="text-blue-200 max-w-[80px] truncate">{user.display_name}</span>
+                  <span className="text-white/70 max-w-[80px] truncate">{user.display_name}</span>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-1 text-blue-200 hover:text-white text-xs transition-colors"
+                  className="flex items-center gap-1 text-white/70 hover:text-white text-xs transition-colors"
                   title={t('nav_logout')}
                 >
                   <LogOut className="w-4 h-4" />
@@ -98,13 +98,13 @@ export default function Navbar() {
               <div className="flex items-center gap-1.5">
                 <Link
                   to="/login"
-                  className="text-blue-100 hover:text-white text-sm font-medium transition-colors px-2 py-1"
+                  className="text-white/80 hover:text-white text-sm font-medium transition-colors px-2 py-1"
                 >
                   {t('nav_login')}
                 </Link>
                 <Link
                   to="/signup"
-                  className="bg-brand-accent hover:bg-yellow-400 text-brand-primary text-sm font-bold px-3 py-1.5 rounded-lg transition-colors"
+                  className="bg-brand-accent hover:bg-brand-accent-dark text-brand-primary text-sm font-bold px-3 py-1.5 rounded-lg transition-colors"
                 >
                   {t('nav_signup')}
                 </Link>
@@ -141,7 +141,7 @@ export default function Navbar() {
 
       {/* Mobile menu */}
       {menuOpen && (
-        <div className="md:hidden bg-blue-900 border-t border-blue-700 px-4 py-3 space-y-1">
+        <div className="md:hidden bg-brand-primary-muted border-t border-white/10 px-4 py-3 space-y-1">
           {navLinks.map((link) => {
             const active = location.pathname === link.to
             return (
@@ -152,7 +152,7 @@ export default function Navbar() {
                 className={`block px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   active
                     ? 'bg-brand-secondary text-white'
-                    : 'text-blue-100 hover:bg-blue-700 hover:text-white'
+                    : 'text-white/80 hover:bg-brand-primary-dark hover:text-white'
                 }`}
               >
                 {link.label}
@@ -160,10 +160,10 @@ export default function Navbar() {
             )
           })}
 
-          <div className="border-t border-blue-700 pt-2 mt-2 space-y-1">
+          <div className="border-t border-white/10 pt-2 mt-2 space-y-1">
             {user ? (
               <>
-                <div className="flex items-center gap-2 px-4 py-2 text-blue-200 text-sm">
+                <div className="flex items-center gap-2 px-4 py-2 text-white/70 text-sm">
                   <User className="w-4 h-4" />
                   {user.display_name}
                 </div>
