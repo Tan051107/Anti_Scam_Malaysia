@@ -124,6 +124,42 @@ def _extract_message_from_image(image_bytes: bytes, content_type: str) -> str:
         return ""
 
 
+def _extract_scam_content(text: str) -> str:
+    """
+    Strip prompt wrappers from user-submitted text and return only the
+    suspicious/scam message content. Uses Bedrock with a structured prompt.
+    Falls back to the original text if Bedrock fails.
+    """
+    if not text:
+        return text
+    try:
+        client = get_bedrock_client()
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 512,
+            "system": (
+                "You are a text extraction tool. Your only job is to extract the scam or suspicious "
+                "message content from user-submitted text. Users sometimes wrap the actual scam message "
+                "with their own commentary or questions — either before the message (e.g. 'Is this a scam?', "
+                "'Check this:', 'My friend sent me this message:') or after it (e.g. '...check if it's scam', "
+                "'...is this legit?', '...scam ke?'). Remove the user's commentary whether it appears at "
+                "the start or end, and return only the scam/suspicious message itself. "
+                "If there is no wrapper and the text is already just the message, return it unchanged. "
+                "Return ONLY the extracted message text, nothing else."
+            ),
+            "messages": [{"role": "user", "content": (
+                f"<user_submitted_text>\n{text}\n</user_submitted_text>\n\n"
+                "Extract and return only the scam/suspicious message content from the text above."
+            )}],
+        })
+        response = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
+        extracted = json.loads(response["body"].read())["content"][0]["text"].strip()
+        return extracted if extracted else text
+    except Exception as exc:
+        logger.warning("_extract_scam_content failed: %s", exc, exc_info=True)
+        return text
+
+
 # ─────────────────────────────────────────────
 # PII censorship helpers
 # ─────────────────────────────────────────────
@@ -516,9 +552,10 @@ async def create_post(
             original_message = censored_text
             pii_values = _extract_pii_values(extracted_raw, censored_text)
         elif original_message:
-            # User supplied the message text — censor it and extract PII hints for image redaction
-            censored_text = _censor_text(original_message)
-            pii_values = _extract_pii_values(original_message, censored_text)
+            # Strip any prompt wrapper the user typed before the scam content
+            clean_content = _extract_scam_content(original_message)
+            censored_text = _censor_text(clean_content)
+            pii_values = _extract_pii_values(clean_content, censored_text)
             original_message = censored_text
         else:
             pii_values = []
@@ -528,6 +565,11 @@ async def create_post(
         except Exception:
             raise HTTPException(status_code=500, detail="Image censorship failed. Upload rejected to protect privacy.")
         _upload_to_s3(censored_bytes, image.content_type, image_key)
+
+    # For text-only posts (no image), still scrub the original_message
+    elif original_message:
+        clean_content = _extract_scam_content(original_message)
+        original_message = _censor_text(clean_content)
 
     # Scrub PII from indicators before storing
     indicators_list: list[str] = []

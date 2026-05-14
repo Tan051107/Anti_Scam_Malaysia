@@ -22,11 +22,12 @@ export default function ShareModal({ analysisData, onClose }) {
     setLoading(true)
     try {
       const formData = new FormData()
+
       // When sharing an image, don't send original_message —
       // the backend will extract it from the image via Bedrock
       if (!includeImage) {
         formData.append('original_message', analysisData.lastMessage || '')
-        formData.append('caption', analysisData.lastMessage?.slice(0, 200) || '')
+        formData.append('caption', (analysisData.lastMessage || '').slice(0, 200))
       }
       formData.append('risk_score', analysisData.risk_score)
       formData.append('risk_level', analysisData.risk_level)
