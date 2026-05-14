@@ -487,7 +487,7 @@ export default function ReportSimulator() {
               <ul className="text-xs text-red-700 space-y-1">
                 <li>{t('report_step_police')}</li>
                 <li>{t('report_step_bank')}</li>
-                <li>{t('report_step_ccid')} <strong>03-2610 5000</strong></li>
+                <li>{t('report_step_ccid')} <strong>03-2610 1222</strong></li>
                 <li>{t('report_step_bnm')} <strong>1-300-88-5465</strong></li>
                 <li>{t('report_step_mule')} <strong>www.semakmule.rmp.gov.my</strong></li>
                 <li>{t('report_step_mcmc')} <strong>aduan.mcmc.gov.my</strong></li>

@@ -61,10 +61,11 @@ function Lightbox({ src, alt, onClose }) {
 
 // ─── Post Card ───────────────────────────────────────────────
 function PostCard({ post, onDelete, onUpvote, currentUser, lang, t }) {
-  const [deleting, setDeleting]       = useState(false)
-  const [lightboxSrc, setLightboxSrc] = useState(null)
-  const [showConfirm, setShowConfirm] = useState(false)
-  const [upvoting, setUpvoting]       = useState(false)
+  const [deleting, setDeleting]             = useState(false)
+  const [lightboxSrc, setLightboxSrc]       = useState(null)
+  const [showConfirm, setShowConfirm]       = useState(false)
+  const [upvoting, setUpvoting]             = useState(false)
+  const [showAllIndicators, setShowAllIndicators] = useState(false)
 
   const handleDeleteConfirmed = async () => {
     setShowConfirm(false)
@@ -165,7 +166,7 @@ function PostCard({ post, onDelete, onUpvote, currentUser, lang, t }) {
               <AlertTriangle className="w-3 h-3 text-orange-500" />
               {post.image_url ? t('community_extracted_msg') : t('community_suspicious_content')}
             </p>
-            <p className="text-sm text-gray-700 line-clamp-4 break-words whitespace-pre-wrap">
+            <p className="text-sm text-gray-700 break-words whitespace-pre-wrap md:line-clamp-none line-clamp-4">
               {post.original_message}
             </p>
           </div>
@@ -181,14 +182,21 @@ function PostCard({ post, onDelete, onUpvote, currentUser, lang, t }) {
         {/* Indicators */}
         {post.indicators?.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-3">
-            {post.indicators.slice(0, 4).map((ind, i) => (
+            {(showAllIndicators ? post.indicators : post.indicators.slice(0, 4)).map((ind, i) => (
               <span key={i} className="text-xs bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                 <span className="line-clamp-1 max-w-[180px]">{ind}</span>
               </span>
             ))}
             {post.indicators.length > 4 && (
-              <span className="text-xs text-gray-400">+{post.indicators.length - 4} {t('community_more_indicators')}</span>
+              <button
+                onClick={() => setShowAllIndicators((v) => !v)}
+                className="text-xs text-brand-primary hover:text-brand-primary-dark font-medium px-2 py-0.5 rounded-full border border-brand-primary/30 hover:bg-brand-primary/5 transition-colors"
+              >
+                {showAllIndicators
+                  ? t('community_show_less') || 'Show less'
+                  : `+${post.indicators.length - 4} ${t('community_more_indicators')}`}
+              </button>
             )}
           </div>
         )}

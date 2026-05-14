@@ -529,6 +529,16 @@ async def create_post(
             raise HTTPException(status_code=500, detail="Image censorship failed. Upload rejected to protect privacy.")
         _upload_to_s3(censored_bytes, image.content_type, image_key)
 
+    # Scrub PII from indicators before storing
+    indicators_list: list[str] = []
+    if indicators:
+        try:
+            raw_indicators = json.loads(indicators)
+            indicators_list = [_censor_text(ind) for ind in raw_indicators if isinstance(ind, str)]
+        except (json.JSONDecodeError, TypeError):
+            indicators_list = []
+    indicators_json = json.dumps(indicators_list) if indicators_list else indicators
+
     post = CommunityPost(
         user_id=current_user.id,
         caption=caption,
@@ -537,7 +547,7 @@ async def create_post(
         note=note,
         risk_score=risk_score,
         risk_level=risk_level,
-        indicators=indicators,
+        indicators=indicators_json,
         image_key=image_key,
         is_anonymous=is_anonymous,
     )
@@ -545,7 +555,6 @@ async def create_post(
     await db.flush()
 
     image_url = _get_presigned_url(image_key) if image_key else None
-    indicators_list = json.loads(indicators) if indicators else []
 
     return PostResponse(
         id=post.id, user_id=post.user_id,

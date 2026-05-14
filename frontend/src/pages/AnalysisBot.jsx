@@ -230,7 +230,6 @@ export default function AnalysisBot() {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-1 text-center">{t('analysis_enter_hint')}</p>
           </div>
         </div>
 
@@ -288,7 +287,7 @@ export default function AnalysisBot() {
             <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4">
               <h3 className="font-semibold text-red-800 text-sm mb-2">{t('report_hotlines')}</h3>
               <div className="text-xs text-red-700 space-y-1">
-                <div>CCID Polis: <strong>03-2610 5000</strong></div>
+                <div>CCID Polis: <strong>03-2610 1222</strong></div>
                 <div>BNM TELELINK: <strong>1-300-88-5465</strong></div>
                 <div>{t('analysis_hotline_emergency')}: <strong>997</strong></div>
               </div>

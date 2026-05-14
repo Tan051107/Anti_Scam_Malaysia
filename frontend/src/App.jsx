@@ -19,7 +19,7 @@ function AppFooter() {
         {lang === 'ms' ? 'Untuk kecemasan, hubungi' : 'For emergencies, call'}{' '}
         <span className="text-yellow-400 font-semibold">997</span>{' '}
         {lang === 'ms' ? 'atau' : 'or'} CCID Polis{' '}
-        <span className="text-yellow-400 font-semibold">03-2610 5000</span>
+        <span className="text-yellow-400 font-semibold">03-2610 1222</span>
       </p>
     </footer>
   )

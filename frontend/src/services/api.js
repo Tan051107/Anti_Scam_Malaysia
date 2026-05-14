@@ -6,6 +6,80 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// ─── Token refresh interceptor ───────────────────────────────
+// When any request gets a 401, try to refresh the access token once.
+// If refresh succeeds, retry the original request.
+// If refresh fails, clear the session and redirect to login.
+let _isRefreshing = false
+let _refreshQueue = []  // pending requests waiting for the new token
+
+function _processQueue(error, token = null) {
+  _refreshQueue.forEach(({ resolve, reject }) => {
+    if (error) reject(error)
+    else resolve(token)
+  })
+  _refreshQueue = []
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const original = error.config
+
+    // Only intercept 401s that haven't already been retried
+    if (error.response?.status !== 401 || original._retry) {
+      return Promise.reject(error)
+    }
+
+    // Don't intercept auth endpoints themselves (login/refresh)
+    if (original.url?.includes('/auth/')) {
+      return Promise.reject(error)
+    }
+
+    if (_isRefreshing) {
+      // Queue this request until the refresh completes
+      return new Promise((resolve, reject) => {
+        _refreshQueue.push({ resolve, reject })
+      }).then((token) => {
+        original.headers['Authorization'] = `Bearer ${token}`
+        return api(original)
+      })
+    }
+
+    original._retry = true
+    _isRefreshing = true
+
+    try {
+      const stored = localStorage.getItem('antiscam_user')
+      if (!stored) throw new Error('No session')
+
+      const { refresh_token } = JSON.parse(stored)
+      if (!refresh_token) throw new Error('No refresh token')
+
+      const res = await api.post('/auth/refresh', { refresh_token })
+      const { access_token, refresh_token: new_refresh } = res.data
+
+      // Update stored session with new tokens
+      const updated = { ...JSON.parse(localStorage.getItem('antiscam_user')), access_token, refresh_token: new_refresh }
+      localStorage.setItem('antiscam_user', JSON.stringify(updated))
+      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
+
+      _processQueue(null, access_token)
+      original.headers['Authorization'] = `Bearer ${access_token}`
+      return api(original)
+    } catch (refreshError) {
+      _processQueue(refreshError, null)
+      // Clear session and send to login
+      localStorage.removeItem('antiscam_user')
+      delete api.defaults.headers.common['Authorization']
+      window.location.href = '/login'
+      return Promise.reject(refreshError)
+    } finally {
+      _isRefreshing = false
+    }
+  }
+)
+
 export default api
 
 // ─────────────────────────────────────────────

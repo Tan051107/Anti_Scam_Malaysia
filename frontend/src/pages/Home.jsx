@@ -233,7 +233,7 @@ export default function Home() {
           <div className="grid sm:grid-cols-3 gap-4 text-sm">
             {[
               { label: lang === 'ms' ? 'Kecemasan' : 'Emergency', number: '997',           color: 'bg-red-600' },
-              { label: 'CCID Polis Malaysia',                      number: '03-2610 5000',  color: 'bg-brand-secondary' },
+              { label: 'CCID Polis Malaysia',                      number: '03-2610 1222',  color: 'bg-brand-secondary' },
               { label: 'BNM TELELINK',                             number: '1-300-88-5465', color: 'bg-green-700' },
             ].map((item) => (
               <div key={item.number} className={`${item.color} text-white rounded-xl py-3 px-4`}>

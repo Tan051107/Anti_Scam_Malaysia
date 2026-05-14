@@ -152,14 +152,28 @@ The JSON must have exactly these fields:
 def _invoke(model_id: str, system_prompt: str, messages: list, max_tokens: int = 1024) -> dict:
     """Call Bedrock and return the parsed JSON dict from Claude's reply."""
     client = get_bedrock_client()
-    body = json.dumps({
+
+    body_dict = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": max_tokens,
         "system": system_prompt,
         "messages": messages,
-    })
+    }
+
+    # Attach guardrail if configured — passed as API kwargs, not in body
+    guardrail_id = os.getenv("ANALYSIS_GUARDRAIL_ID", "").strip()
+    guardrail_version = os.getenv("ANALYSIS_GUARDRAIL_VERSION", "DRAFT").strip()
+
+    body = json.dumps(body_dict)
+
+    # Build invoke_model kwargs — guardrail params are API-level, not in the body
+    invoke_kwargs = {"modelId": model_id, "body": body}
+    if guardrail_id:
+        invoke_kwargs["guardrailIdentifier"] = guardrail_id
+        invoke_kwargs["guardrailVersion"] = guardrail_version
+
     try:
-        response = client.invoke_model(modelId=model_id, body=body)
+        response = client.invoke_model(**invoke_kwargs)
     except client.exceptions.AccessDeniedException:
         raise HTTPException(status_code=502, detail="Bedrock access denied — check IAM permissions and model access.")
     except client.exceptions.ValidationException as e:
@@ -168,7 +182,37 @@ def _invoke(model_id: str, system_prompt: str, messages: list, max_tokens: int =
         raise HTTPException(status_code=502, detail="Bedrock service error — please try again.")
 
     raw = json.loads(response["body"].read())
-    text = raw["content"][0]["text"].strip()
+
+    # Check if guardrail blocked the request — must check BEFORE accessing content
+    stop_reason = raw.get("stop_reason", "")
+    if stop_reason == "guardrail_intervened":
+        # Extract the guardrail's output message if available, otherwise use a default
+        guardrail_text = "I can't process that request, but I can help you check if a message might be a scam."
+        for block in raw.get("content", []):
+            if isinstance(block, dict) and block.get("type") == "text":
+                guardrail_text = block.get("text", guardrail_text).strip()
+                break
+        return {
+            "reply": guardrail_text,
+            "risk_score": 0,
+            "risk_level": "LOW",
+            "indicators": [],
+            "confidence": 0,
+        }
+
+    # Extract text from content array defensively
+    content = raw.get("content", [])
+    text = None
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            text = block.get("text", "").strip()
+            break
+
+    if not text:
+        # Log raw response to help diagnose guardrail or model issues
+        import logging
+        logging.getLogger(__name__).error("Unparseable Bedrock response: %s", json.dumps(raw)[:500])
+        raise HTTPException(status_code=502, detail="Model returned an unparseable response. Please try again.")
 
     # Strip accidental markdown code fences if Claude adds them
     if text.startswith("```"):
@@ -180,7 +224,18 @@ def _invoke(model_id: str, system_prompt: str, messages: list, max_tokens: int =
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail="Model returned an unparseable response. Please try again.")
+        import logging
+        logging.getLogger(__name__).error("JSON decode failed for Bedrock response text: %s", text[:300])
+        # Guardrail blocked the message — Claude returned plain text refusal instead of JSON.
+        # Return it as a structured low-risk response so the frontend can display it gracefully.
+        return {
+            "reply": text,
+            "risk_score": 0,
+            "risk_level": "LOW",
+            "indicators": [],
+            "confidence": 0,
+            "blocked": True,
+        }
 
 
 # ─────────────────────────────────────────────

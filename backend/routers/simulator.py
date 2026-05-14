@@ -108,22 +108,59 @@ The first key must always be "internal_reasoning"."""
 # ─────────────────────────────────────────────
 
 def _invoke_simulator(system_prompt: str, messages: list) -> dict:
+    import os
     client = get_bedrock_client()
+
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 1024,
         "system": system_prompt,
         "messages": messages,
     })
+
+    # Apply guardrail if configured
+    guardrail_id = os.getenv("SIMULATOR_GUARDRAIL_ID", "").strip()
+    guardrail_version = os.getenv("SIMULATOR_GUARDRAIL_VERSION", "DRAFT").strip()
+    invoke_kwargs = {"modelId": SIMULATOR_MODEL_ID, "body": body}
+    if guardrail_id:
+        invoke_kwargs["guardrailIdentifier"] = guardrail_id
+        invoke_kwargs["guardrailVersion"] = guardrail_version
+
     try:
-        response = client.invoke_model(modelId=SIMULATOR_MODEL_ID, body=body)
+        response = client.invoke_model(**invoke_kwargs)
     except client.exceptions.AccessDeniedException:
         raise HTTPException(status_code=502, detail="Bedrock access denied — check IAM permissions.")
     except Exception:
         raise HTTPException(status_code=502, detail="Bedrock service error — please try again.")
 
     raw = json.loads(response["body"].read())
-    text = raw["content"][0]["text"].strip()
+
+    # Guardrail blocked the message — return a safe fallback response
+    stop_reason = raw.get("stop_reason", "")
+    if stop_reason == "guardrail_intervened":
+        guardrail_text = "I can't process that request. Please keep the conversation focused on the scam simulation."
+        for block in raw.get("content", []):
+            if isinstance(block, dict) and block.get("type") == "text":
+                guardrail_text = block.get("text", guardrail_text).strip()
+                break
+        return {
+            "internal_reasoning": "",
+            "reply": guardrail_text,
+            "scam_ended": False,
+            "user_caught_scam": False,
+            "report": None,
+        }
+
+    # Extract text defensively
+    content = raw.get("content", [])
+    text = None
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            text = block.get("text", "").strip()
+            break
+
+    if not text:
+        raise HTTPException(status_code=502, detail="Model returned an empty response. Please try again.")
 
     # Strip accidental markdown fences
     if text.startswith("```"):
@@ -135,7 +172,14 @@ def _invoke_simulator(system_prompt: str, messages: list) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail="Model returned an unparseable response. Please try again.")
+        # Non-JSON plain text response — wrap it gracefully
+        return {
+            "internal_reasoning": "",
+            "reply": text,
+            "scam_ended": False,
+            "user_caught_scam": False,
+            "report": None,
+        }
 
 
 def _scam_report_from_result_payload(r: dict) -> ScamReport:
