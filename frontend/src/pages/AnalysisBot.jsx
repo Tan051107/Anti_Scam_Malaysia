@@ -1,10 +1,75 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Paperclip, X, AlertCircle, Loader2, Share2 } from 'lucide-react'
+import { Send, Paperclip, X, AlertCircle, Loader2, Share2, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react'
 import ChatBubble from '../components/ChatBubble'
 import RiskGauge from '../components/RiskGauge'
 import ShareModal from '../components/ShareModal'
 import { sendAnalysisMessage, uploadAnalysisImage } from '../services/api'
 import { useLanguage, translations } from '../context/LanguageContext'
+
+// ─────────────────────────────────────────────
+// Extracted risk panel content — shared between desktop sidebar and mobile drawer
+// ─────────────────────────────────────────────
+function RiskAssessmentContent({ riskData, canShare, onShare, getRiskLevelColor, t, lang }) {
+  return (
+    <div className="p-5">
+      <h2 className="font-bold text-gray-900 mb-1">{t('analysis_risk_title')}</h2>
+      <p className="text-xs text-gray-500 mb-5">{t('analysis_risk_subtitle')}</p>
+
+      <RiskGauge score={riskData.score} riskLevel={riskData.level} confidence={riskData.confidence} />
+
+      {/* Share button — shown when risk >= 60% */}
+      {canShare && (
+        <button
+          onClick={onShare}
+          className="w-full mt-4 bg-brand-secondary hover:bg-brand-secondary-dark text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+        >
+          <Share2 className="w-4 h-4" />
+          {t('analysis_share_btn')}
+        </button>
+      )}
+
+      {/* Indicators */}
+      <div className="mt-6">
+        <h3 className="font-semibold text-gray-800 text-sm mb-3 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-orange-500" />
+          {t('analysis_indicators')}
+        </h3>
+        {riskData.indicators.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">{t('analysis_no_indicators')}</p>
+        ) : (
+          <ul className="space-y-2">
+            {riskData.indicators.map((indicator, i) => (
+              <li key={i} className={`text-xs px-3 py-2 rounded-lg border flex items-start gap-2 ${getRiskLevelColor(riskData.level)}`}>
+                <span className="mt-0.5 flex-shrink-0">⚠️</span>
+                <span>{indicator}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Tips */}
+      <div className="mt-6 bg-brand-primary/5 border border-brand-primary/20 rounded-xl p-4">
+        <h3 className="font-semibold text-brand-primary text-sm mb-2">{t('tips_title')}</h3>
+        <ul className="text-xs text-brand-primary/80 space-y-1">
+          <li>{t('analysis_tip_otp')}</li>
+          <li>{t('analysis_tip_bank')}</li>
+          <li>{t('analysis_tip_verify')}</li>
+        </ul>
+      </div>
+
+      {/* Hotlines */}
+      <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4">
+        <h3 className="font-semibold text-red-800 text-sm mb-2">{t('report_hotlines')}</h3>
+        <div className="text-xs text-red-700 space-y-1">
+          <div>CCID Polis: <strong>03-2610 1222</strong></div>
+          <div>BNM TELELINK: <strong>1-300-88-5465</strong></div>
+          <div>{t('analysis_hotline_emergency')}: <strong>997</strong></div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function AnalysisBot() {
   const { t, lang } = useLanguage()
@@ -24,6 +89,8 @@ export default function AnalysisBot() {
   const [lastMessage, setLastMessage] = useState('')
   const [lastImageFile, setLastImageFile] = useState(null)
   const [showShare, setShowShare]     = useState(false)
+  // Risk panel: collapsed by default on mobile/tablet, expanded on desktop
+  const [riskPanelOpen, setRiskPanelOpen] = useState(false)
 
   const messagesEndRef = useRef(null)
   const fileInputRef   = useRef(null)
@@ -157,7 +224,7 @@ export default function AnalysisBot() {
       <div className="flex-1 flex overflow-hidden">
 
         {/* LEFT — Chat */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-gray-200">
+        <div className="flex-1 flex flex-col min-w-0 lg:border-r lg:border-gray-200">
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
             {messages.map((msg) =>
               msg.isNotice ? (
@@ -200,6 +267,47 @@ export default function AnalysisBot() {
             </div>
           )}
 
+          {/* Mobile risk toggle bar — hidden on lg+ */}
+          <div className="lg:hidden border-t border-gray-200">
+            <button
+              onClick={() => setRiskPanelOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-white hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-brand-secondary" />
+                <span className="text-sm font-semibold text-gray-700">{t('analysis_risk_title')}</span>
+                {riskData.score > 0 && (
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    riskData.level === 'CRITICAL' ? 'bg-red-100 text-red-700' :
+                    riskData.level === 'HIGH'     ? 'bg-orange-100 text-orange-700' :
+                    riskData.level === 'MEDIUM'   ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-green-100 text-green-700'
+                  }`}>
+                    {riskData.score}% · {riskData.level}
+                  </span>
+                )}
+              </div>
+              {riskPanelOpen
+                ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                : <ChevronDown className="w-4 h-4 text-gray-400" />
+              }
+            </button>
+
+            {/* Collapsible risk panel — mobile/tablet only */}
+            {riskPanelOpen && (
+              <div className="bg-white border-t border-gray-100 overflow-y-auto max-h-[50vh]">
+                <RiskAssessmentContent
+                  riskData={riskData}
+                  canShare={canShare}
+                  onShare={() => setShowShare(true)}
+                  getRiskLevelColor={getRiskLevelColor}
+                  t={t}
+                  lang={lang}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="bg-white border-t border-gray-200 p-3">
             <div className="flex items-end gap-2 bg-gray-100 rounded-xl px-3 py-2">
               <button
@@ -233,66 +341,16 @@ export default function AnalysisBot() {
           </div>
         </div>
 
-        {/* RIGHT — Risk Dashboard */}
-        <div className="w-80 xl:w-96 flex-shrink-0 bg-white overflow-y-auto">
-          <div className="p-5">
-            <h2 className="font-bold text-gray-900 mb-1">{t('analysis_risk_title')}</h2>
-            <p className="text-xs text-gray-500 mb-5">{t('analysis_risk_subtitle')}</p>
-
-            <RiskGauge score={riskData.score} riskLevel={riskData.level} confidence={riskData.confidence} />
-
-            {/* Share button — shown when risk >= 60% */}
-            {canShare && (
-              <button
-                onClick={() => setShowShare(true)}
-                className="w-full mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
-                title={t('analysis_share_tooltip')}
-              >
-                <Share2 className="w-4 h-4" />
-                {t('analysis_share_btn')}
-              </button>
-            )}
-
-            {/* Indicators */}
-            <div className="mt-6">
-              <h3 className="font-semibold text-gray-800 text-sm mb-3 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-orange-500" />
-                {t('analysis_indicators')}
-              </h3>
-              {riskData.indicators.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">{t('analysis_no_indicators')}</p>
-              ) : (
-                <ul className="space-y-2">
-                  {riskData.indicators.map((indicator, i) => (
-                    <li key={i} className={`text-xs px-3 py-2 rounded-lg border flex items-start gap-2 ${getRiskLevelColor(riskData.level)}`}>
-                      <span className="mt-0.5 flex-shrink-0">⚠️</span>
-                      <span>{indicator}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Tips */}
-            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <h3 className="font-semibold text-blue-800 text-sm mb-2">{t('tips_title')}</h3>
-              <ul className="text-xs text-blue-700 space-y-1">
-                <li>{t('analysis_tip_otp')}</li>
-                <li>{t('analysis_tip_bank')}</li>
-                <li>{t('analysis_tip_verify')}</li>
-              </ul>
-            </div>
-
-            {/* Hotlines */}
-            <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4">
-              <h3 className="font-semibold text-red-800 text-sm mb-2">{t('report_hotlines')}</h3>
-              <div className="text-xs text-red-700 space-y-1">
-                <div>CCID Polis: <strong>03-2610 1222</strong></div>
-                <div>BNM TELELINK: <strong>1-300-88-5465</strong></div>
-                <div>{t('analysis_hotline_emergency')}: <strong>997</strong></div>
-              </div>
-            </div>
-          </div>
+        {/* RIGHT — Risk Dashboard (desktop only, always visible) */}
+        <div className="hidden lg:block w-80 xl:w-96 flex-shrink-0 bg-white overflow-y-auto">
+          <RiskAssessmentContent
+            riskData={riskData}
+            canShare={canShare}
+            onShare={() => setShowShare(true)}
+            getRiskLevelColor={getRiskLevelColor}
+            t={t}
+            lang={lang}
+          />
         </div>
       </div>
 

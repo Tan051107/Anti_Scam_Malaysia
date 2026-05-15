@@ -151,7 +151,7 @@ export default function ReportSimulator() {
   }
 
   const inputClass = (field) =>
-    `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+    `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary ${
       errors[field] ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-white'
     }`
 
@@ -159,7 +159,7 @@ export default function ReportSimulator() {
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <div className="bg-green-600 p-2 rounded-lg">
+        <div className="bg-brand-secondary p-2 rounded-lg">
           <FileText className="w-6 h-6 text-white" />
         </div>
         <div>
@@ -257,7 +257,7 @@ export default function ReportSimulator() {
                 name="currency"
                 value={form.currency}
                 onChange={handleChange}
-                className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                className="border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary bg-white"
               >
                 <option>MYR</option>
                 <option>USD</option>
@@ -382,7 +382,7 @@ export default function ReportSimulator() {
         <div className="mt-6 flex gap-3">
           <button
             onClick={handleGenerate}
-            className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+            className="flex-1 bg-brand-secondary hover:bg-brand-secondary-dark text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             <FileText className="w-5 h-5" />
             {t('report_generate_btn')}
@@ -404,15 +404,15 @@ export default function ReportSimulator() {
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle className="w-6 h-6 text-green-400" />
-                  <span className="text-green-300 text-sm font-medium">{t('report_generated_label')}</span>
+                  <CheckCircle className="w-6 h-6 text-brand-accent" />
+                  <span className="text-brand-accent text-sm font-medium">{t('report_generated_label')}</span>
                 </div>
                 <h2 className="text-2xl font-extrabold">{t('report_heading')}</h2>
               </div>
               <div className="text-right">
-                <div className="text-xs text-blue-300 mb-1">{t('report_id_label')}</div>
+                <div className="text-xs text-white/60 mb-1">{t('report_id_label')}</div>
                 <div className="font-mono font-bold text-brand-accent text-lg">{reportData.reportId}</div>
-                <div className="text-xs text-blue-300 mt-1">{reportData.generatedAt}</div>
+                <div className="text-xs text-white/60 mt-1">{reportData.generatedAt}</div>
               </div>
             </div>
           </div>
@@ -453,8 +453,8 @@ export default function ReportSimulator() {
 
             {/* Victim info */}
             {(reportData.victimName || reportData.victimIC || reportData.victimPhone) && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="text-xs text-blue-600 font-semibold mb-2">{t('report_victim_section')}</div>
+              <div className="bg-brand-primary/10 border border-brand-primary/20 rounded-lg p-4">
+                <div className="text-xs text-brand-primary font-semibold mb-2">{t('report_victim_section')}</div>
                 <div className="grid grid-cols-3 gap-3 text-sm">
                   {reportData.victimName && (
                     <div><span className="text-gray-500 text-xs">{t('report_victim_name')}:</span><br />{reportData.victimName}</div>
