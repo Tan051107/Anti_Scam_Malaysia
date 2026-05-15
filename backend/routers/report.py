@@ -185,105 +185,205 @@ def _build_pdf_layout1(data) -> bytes:
 
 
 # ===========================================================================
-# LAYOUT 2 — Official Document
-# Formal navy + gold government style. Numbered sections, signature block.
+# LAYOUT 2 — Official Document (matches Anti-Scam Malaysia official report)
+# Navy header bar, gold accent line, bilingual section titles, no signature.
 # ===========================================================================
 def _build_pdf_layout2(data) -> bytes:
     buffer = io.BytesIO()
-    NAVY = colors.HexColor("#0B2447")
-    GOLD = colors.HexColor("#B68D40")
+    NAVY  = colors.HexColor("#0B2447")
+    GOLD  = colors.HexColor("#B68D40")
+    GREY  = colors.HexColor("#475569")
+    DARK  = colors.HexColor("#0F172A")
+    LIGHT = colors.HexColor("#F8FAFC")
+    RED   = colors.HexColor("#C0392B")
 
+    W, H = A4
+    generated = datetime.now().strftime("%d/%m/%Y, %I:%M:%S %p")
+    ref_id    = _fmt(getattr(data, "reportId", None))
+
+    # ── Page template: header + footer drawn on canvas ──────────────────────
     def _header_footer(canv: canvas.Canvas, doc_):
         canv.saveState()
-        # top bar
+
+        # Navy top bar
         canv.setFillColor(NAVY)
-        canv.rect(0, A4[1] - 22 * mm, A4[0], 22 * mm, stroke=0, fill=1)
-        canv.setFillColor(colors.white)
-        canv.setFont("Helvetica-Bold", 14)
-        canv.drawString(20 * mm, A4[1] - 13 * mm, "OFFICIAL SCAM INCIDENT REPORT")
-        canv.setFont("Helvetica", 9)
-        canv.drawString(20 * mm, A4[1] - 18 * mm, "Laporan Insiden Penipuan Rasmi")
-        # gold accent
+        canv.rect(0, H - 28 * mm, W, 28 * mm, stroke=0, fill=1)
+
+        # Gold accent line below navy bar
         canv.setFillColor(GOLD)
-        canv.rect(0, A4[1] - 24 * mm, A4[0], 2 * mm, stroke=0, fill=1)
-        # footer
-        canv.setFillColor(colors.HexColor("#475569"))
+        canv.rect(0, H - 30 * mm, W, 2 * mm, stroke=0, fill=1)
+
+        # Header text
+        canv.setFillColor(colors.white)
+        canv.setFont("Helvetica-Bold", 11)
+        canv.drawString(18 * mm, H - 12 * mm, "ANTI-SCAM MALAYSIA  /  LAPORAN RASMI")
         canv.setFont("Helvetica", 8)
-        canv.drawString(20 * mm, 12 * mm,
-                        f"Report ID: {_fmt(getattr(data, 'reportId', None))}")
-        canv.drawRightString(A4[0] - 20 * mm, 12 * mm,
-                             f"Page {doc_.page}")
+        canv.drawRightString(W - 18 * mm, H - 12 * mm, f"Ref: {ref_id}")
+
+        # Footer
+        canv.setFillColor(GREY)
+        canv.setFont("Helvetica", 7.5)
+        footer = (
+            f"Page {doc_.page}  •  Generated {generated}  •  For reference only"
+        )
+        canv.drawCentredString(W / 2, 10 * mm, footer)
+
         canv.restoreState()
 
     doc = BaseDocTemplate(
         buffer, pagesize=A4,
-        leftMargin=20 * mm, rightMargin=20 * mm,
-        topMargin=32 * mm, bottomMargin=22 * mm,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=38 * mm, bottomMargin=20 * mm,
     )
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="main")
     doc.addPageTemplates([PageTemplate(id="official", frames=[frame], onPage=_header_footer)])
 
     styles = getSampleStyleSheet()
-    section = ParagraphStyle("s", parent=styles["Heading2"], fontSize=12,
-                             textColor=NAVY, spaceBefore=12, spaceAfter=6)
-    body = ParagraphStyle("b", parent=styles["Normal"], fontSize=10,
-                          textColor=colors.HexColor("#0F172A"), leading=14)
-    label = ParagraphStyle("l", parent=styles["Normal"], fontSize=9,
-                           textColor=colors.HexColor("#475569"))
+
+    title_style = ParagraphStyle(
+        "title", parent=styles["Title"],
+        fontSize=20, textColor=DARK, alignment=TA_CENTER,
+        spaceAfter=2, fontName="Helvetica-Bold",
+    )
+    subtitle_style = ParagraphStyle(
+        "subtitle", parent=styles["Normal"],
+        fontSize=10, textColor=GREY, alignment=TA_CENTER, spaceAfter=10,
+    )
+    section_style = ParagraphStyle(
+        "section", parent=styles["Normal"],
+        fontSize=10, textColor=colors.white, fontName="Helvetica-Bold",
+    )
+    label_style = ParagraphStyle(
+        "label", parent=styles["Normal"],
+        fontSize=9, textColor=GREY,
+    )
+    value_style = ParagraphStyle(
+        "value", parent=styles["Normal"],
+        fontSize=10, textColor=DARK, fontName="Helvetica-Bold",
+    )
+    body_style = ParagraphStyle(
+        "body", parent=styles["Normal"],
+        fontSize=10, textColor=DARK, leading=15,
+    )
+    action_style = ParagraphStyle(
+        "action", parent=styles["Normal"],
+        fontSize=10, textColor=RED, leading=16,
+    )
 
     story = []
-    story.append(Paragraph(
-        f"Issued on {datetime.now().strftime('%d %B %Y')} · "
-        f"Tarikh: {datetime.now().strftime('%d/%m/%Y')}", label))
 
-    def _section(letter, en, ms, rows):
-        story.append(Paragraph(f"<b>{letter}.</b> {en} <i>/ {ms}</i>", section))
-        t = Table(rows, colWidths=[60 * mm, doc.width - 60 * mm])
+    # ── Report title ─────────────────────────────────────────────────────────
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph("SCAM INCIDENT REPORT", title_style))
+    story.append(Paragraph("Laporan Insiden Penipuan", subtitle_style))
+
+    # ── Helper: section header bar ───────────────────────────────────────────
+    def _section_header(en_title, ms_title):
+        header = Table(
+            [[Paragraph(f"{en_title}  <font size='8' color='#CBD5E1'>/ {ms_title}</font>",
+                        section_style)]],
+            colWidths=[doc.width],
+        )
+        header.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), NAVY),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(header)
+
+    # ── Helper: two-column data table ────────────────────────────────────────
+    def _data_table(rows):
+        """rows = list of (label_en / label_ms, value)"""
+        table_rows = []
+        for label_text, value_text in rows:
+            table_rows.append([
+                Paragraph(label_text, label_style),
+                Paragraph(str(value_text) if value_text else "—", value_style),
+            ])
+        t = Table(table_rows, colWidths=[65 * mm, doc.width - 65 * mm])
         t.setStyle(TableStyle([
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-            ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#475569")),
-            ("LINEBELOW", (0, 0), (-1, -1), 0.3, colors.HexColor("#CBD5E1")),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BACKGROUND",    (0, 0), (-1, -1), LIGHT),
+            ("LINEBELOW",     (0, 0), (-1, -2), 0.4, colors.HexColor("#E2E8F0")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ]))
         story.append(t)
+        story.append(Spacer(1, 4 * mm))
 
-    _section("A", "Reporter Information", "Maklumat Pelapor", [
-        ["Full name / Nama penuh", _fmt(getattr(data, "reporterName", None))],
-        ["Contact / Hubungan", _fmt(getattr(data, "reporterContact", None))],
-    ])
-    _section("B", "Incident Details", "Butiran Insiden", [
-        ["Date / Tarikh", _fmt(getattr(data, "incidentDate", None))],
-        ["Scam type / Jenis penipuan", _fmt(getattr(data, "scamType", None))],
-        ["Method / Kaedah", _fmt(getattr(data, "method", None))],
-        ["Channel / Saluran", _fmt(getattr(data, "channel", None))],
-    ])
-    _section("C", "Financial Loss", "Kerugian Kewangan", [
-        ["Amount / Jumlah", _money(getattr(data, "amountLost", 0))],
-        ["Bank involved / Bank terlibat", _fmt(getattr(data, "bank", None))],
-    ])
-    _section("D", "Description", "Keterangan", [
-        ["Narrative / Keterangan",
-         Paragraph(_fmt(getattr(data, "description", None), "—"), body)],
+    # ── SECTION A — Incident Particulars ─────────────────────────────────────
+    _section_header("SECTION A — INCIDENT PARTICULARS", "Butiran Insiden")
+    _data_table([
+        ("Incident Date / Tarikh",                _fmt(getattr(data, "incidentDate",    None))),
+        ("Scam Type / Jenis Penipuan",            _fmt(getattr(data, "scamType",        None))),
+        ("Contact Method / Kaedah Hubungan",      _fmt(getattr(data, "contactMethod",   None))),
+        ("Scammer's Contact / Hubungan Penipu",   _fmt(getattr(data, "scammerContact",  None))),
+        ("Amount Lost / Kerugian",                _money(getattr(data, "amountLost", 0),
+                                                         getattr(data, "currency", "MYR"))),
+        ("Scammer's Bank / Bank Penipu",          _fmt(getattr(data, "bankAccount",     None))),
     ])
 
-    # Signature block
-    # story.append(Spacer(1, 24))
-    # sig = Table(
-    #     [["", ""],
-    #      ["________________________", "________________________"],
-    #      ["Reporter signature / Tandatangan pelapor",
-    #       "Officer signature / Tandatangan pegawai"]],
-    #     colWidths=[doc.width / 2, doc.width / 2],
-    # )
-    # sig.setStyle(TableStyle([
-    #     ("FONTSIZE", (0, 0), (-1, -1), 9),
-    #     ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#475569")),
-    #     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-    #     ("TOPPADDING", (0, 0), (-1, 0), 28),
-    # ]))
-    # story.append(sig)
+    # ── SECTION B — Victim Information ───────────────────────────────────────
+    victim_name  = _fmt(getattr(data, "victimName",  None))
+    victim_ic    = _fmt(getattr(data, "victimIC",    None))
+    victim_phone = _fmt(getattr(data, "victimPhone", None))
+
+    _section_header("SECTION B — VICTIM INFORMATION", "Maklumat Mangsa")
+    _data_table([
+        ("Name / Nama",              victim_name),
+        ("IC Number / Nombor IC",    victim_ic),
+        ("Phone / Telefon",          victim_phone),
+    ])
+
+    # ── SECTION C — Description of Incident ──────────────────────────────────
+    _section_header("SECTION C — DESCRIPTION OF INCIDENT", "Keterangan Insiden")
+    desc_table = Table(
+        [[Paragraph(_fmt(getattr(data, "description", None), "No description provided."),
+                    body_style)]],
+        colWidths=[doc.width],
+    )
+    desc_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",    (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(desc_table)
+    story.append(Spacer(1, 4 * mm))
+
+    # ── SECTION D — Required Actions ─────────────────────────────────────────
+    _section_header("SECTION D — REQUIRED ACTIONS", "Tindakan Diperlukan")
+    actions = [
+        "File a police report at your nearest police station",
+        "Contact your bank immediately if money was transferred",
+        "Report to CCID: 03-2610 5000",
+        "Report to BNM TELELINK: 1-300-88-5465",
+        "Check mule accounts at: www.semakmule.rmp.gov.my",
+        "Report to MCMC: aduan.mcmc.gov.my",
+    ]
+    action_rows = []
+    for i, act in enumerate(actions, 1):
+        action_rows.append([
+            Paragraph(f"<b>{i}</b>", action_style),
+            Paragraph(act, action_style),
+        ])
+    action_table = Table(action_rows, colWidths=[8 * mm, doc.width - 8 * mm])
+    action_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT),
+        ("LEFTPADDING",   (0, 0), (0, -1), 8),
+        ("LEFTPADDING",   (1, 0), (1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, colors.HexColor("#E2E8F0")),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(action_table)
 
     doc.build(story)
     pdf = buffer.getvalue()

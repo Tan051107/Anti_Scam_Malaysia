@@ -12,12 +12,6 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Any, Dict, List, Optional, Tuple
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, ListFlowable, ListItem
-from reportlab.lib.enums import TA_CENTER
 
 from models.schemas import (
     SimulatorChatRequest,
@@ -285,180 +279,36 @@ async def simulator_chat(request: SimulatorChatRequest):
 
 
 # ─────────────────────────────────────────────
-# PDF generation helper
-# ─────────────────────────────────────────────
-
-def _generate_report_pdf(
-    report: ScamReport, session_id: str, extra_lines: Optional[List[str]] = None
-) -> bytes:
-    """Build a styled PDF scam report and return it as bytes."""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=2 * cm,
-        leftMargin=2 * cm,
-        topMargin=2 * cm,
-        bottomMargin=2 * cm,
-    )
-
-    styles = getSampleStyleSheet()
-    RED    = colors.HexColor("#C0392B")
-    GREEN  = colors.HexColor("#27AE60")
-    DARK   = colors.HexColor("#1A1A2E")
-    GREY   = colors.HexColor("#7F8C8D")
-
-    outcome_color = GREEN if "SUCCESS" in report.outcome else RED
-
-    style_title = ParagraphStyle("title", parent=styles["Title"],
-                                  fontSize=22, textColor=DARK, spaceAfter=4,
-                                  alignment=TA_CENTER, fontName="Helvetica-Bold")
-    style_subtitle = ParagraphStyle("subtitle", parent=styles["Normal"],
-                                     fontSize=11, textColor=GREY, spaceAfter=2,
-                                     alignment=TA_CENTER)
-    style_section = ParagraphStyle("section", parent=styles["Heading2"],
-                                    fontSize=13, textColor=DARK, spaceBefore=14,
-                                    spaceAfter=4, fontName="Helvetica-Bold")
-    style_body = ParagraphStyle("body", parent=styles["Normal"],
-                                 fontSize=10, textColor=DARK, spaceAfter=4,
-                                 leading=15)
-    style_outcome = ParagraphStyle("outcome", parent=styles["Normal"],
-                                    fontSize=13, textColor=outcome_color,
-                                    fontName="Helvetica-Bold", alignment=TA_CENTER,
-                                    spaceBefore=6, spaceAfter=6)
-    style_warning = ParagraphStyle("warning", parent=styles["Normal"],
-                                    fontSize=10, textColor=RED,
-                                    fontName="Helvetica-Bold", spaceAfter=4)
-    style_flag = ParagraphStyle("flag", parent=styles["Normal"],
-                                 fontSize=10, textColor=DARK, leading=14)
-
-    generated_at = datetime.now().strftime("%d %B %Y, %I:%M %p")
-
-    story = []
-
-    # ── Header ──
-    story.append(Paragraph("🚨 Mock Scam Report", style_title))
-    story.append(Paragraph("Anti-Scam Malaysia — Educational Simulation", style_subtitle))
-    story.append(Paragraph(f"Generated: {generated_at} &nbsp;|&nbsp; Session: {session_id[:8]}...", style_subtitle))
-    for line in extra_lines or []:
-        story.append(Paragraph(line, style_subtitle))
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(HRFlowable(width="100%", thickness=2, color=RED))
-    story.append(Spacer(1, 0.3 * cm))
-
-    # ── Outcome banner ──
-    story.append(Paragraph(report.outcome, style_outcome))
-    story.append(HRFlowable(width="100%", thickness=1, color=GREY))
-
-    # ── Scam Pattern ──
-    story.append(Paragraph("Scam Pattern Identified", style_section))
-    story.append(Paragraph(report.scam_type, style_body))
-
-    # ── Red Flags ──
-    story.append(Paragraph("Factors That Led to Suspicion", style_section))
-    flag_items = [
-        ListItem(Paragraph(f"⚠ {flag}", style_flag), leftIndent=12, bulletColor=RED)
-        for flag in report.red_flags
-    ]
-    story.append(ListFlowable(flag_items, bulletType="bullet", leftIndent=16))
-
-    # ── Summary ──
-    story.append(Paragraph("Summary of Incident", style_section))
-    story.append(Paragraph(report.summary, style_body))
-
-    # ── Advice / Notice ──
-    story.append(Spacer(1, 0.4 * cm))
-    story.append(HRFlowable(width="100%", thickness=1, color=RED))
-    story.append(Spacer(1, 0.2 * cm))
-    story.append(Paragraph("⚠️ Important Notice", style_warning))
-    for line in report.advice.replace("\\n", "\n").split("\n"):
-        line = line.strip()
-        if line:
-            story.append(Paragraph(line, style_body))
-
-    story.append(Spacer(1, 0.6 * cm))
-    story.append(HRFlowable(width="100%", thickness=1, color=GREY))
-    story.append(Paragraph(
-        "This report is generated for educational purposes only. "
-        "Anti-Scam Malaysia — Protecting Malaysians from fraud.",
-        ParagraphStyle("footer", parent=styles["Normal"], fontSize=8,
-                       textColor=GREY, alignment=TA_CENTER, spaceBefore=6),
-    ))
-
-    doc.build(story)
-    return buffer.getvalue()
-
-
 @router.post("/report/export-pdf")
 async def export_report_pdf_from_data(report_data: dict):
     """
     Generate and download a PDF from report form data submitted by the frontend.
-    Accepts the full report object and returns a PDF file.
+    Uses the official Layout 2 design from report.py.
     """
-    report = ScamReport(
-        scam_type=report_data.get("scamType", "Unknown"),
-        red_flags=[
-            f"Contact method: {report_data.get('contactMethod', 'N/A')}",
-            f"Amount lost: {report_data.get('currency', 'MYR')} {report_data.get('amountLost', '0') or '0'}",
-            f"Scammer contact: {report_data.get('scammerContact', 'Not provided')}",
-            f"Reported to PDRM: {'Yes' if report_data.get('reportedToPolis') else 'No'}",
-            f"Reported to BNM: {'Yes' if report_data.get('reportedToBNM') else 'No'}",
-        ],
-        summary=report_data.get("description", ""),
-        outcome=report_data.get("status", "DRAFT — For Reference Only"),
-        advice=(
-            "Next Steps / Langkah Seterusnya:\n"
-            "• File a police report at your nearest police station\n"
-            "• Contact your bank immediately if money was transferred\n"
-            "• Report to CCID: 03-2610 5000\n"
-            "• Report to BNM TELELINK: 1-300-88-5465\n"
-            "• Check mule accounts at: www.semakmule.rmp.gov.my\n"
-            "• Report to MCMC: aduan.mcmc.gov.my"
-        ),
-    )
+    from routers.report import _build_pdf_layout2
 
-    # Build extra metadata lines for the PDF header
-    extra_lines = [
-        f"Report ID: {report_data.get('reportId', 'N/A')}",
-        f"Incident Date: {report_data.get('incidentDate', 'N/A')}",
-        f"Generated: {report_data.get('generatedAt', 'N/A')}",
-    ]
-    if report_data.get("victimName"):
-        extra_lines.append(f"Victim Name: {report_data['victimName']}")
-    if report_data.get("victimIC"):
-        extra_lines.append(f"IC Number: {report_data['victimIC']}")
-    if report_data.get("victimPhone"):
-        extra_lines.append(f"Phone: {report_data['victimPhone']}")
-    if report_data.get("bankAccount"):
-        extra_lines.append(f"Scammer's Bank Account: {report_data['bankAccount']}")
+    # Build a simple namespace object so _build_pdf_layout2 can use getattr()
+    class _ReportData:
+        pass
 
-    pdf_bytes = _generate_report_pdf(report, report_data.get("reportId", "N/A"), extra_lines)
-    filename = f"scam-report-{report_data.get('reportId', 'export')}.pdf"
+    d = _ReportData()
+    d.reportId       = report_data.get("reportId", "N/A")
+    d.incidentDate   = report_data.get("incidentDate", "")
+    d.scamType       = report_data.get("scamType", "")
+    d.contactMethod  = report_data.get("contactMethod", "")
+    d.scammerContact = report_data.get("scammerContact", "")
+    d.amountLost     = report_data.get("amountLost", "")
+    d.currency       = report_data.get("currency", "MYR")
+    d.bankAccount    = report_data.get("bankAccount", "")
+    d.victimName     = report_data.get("victimName", "")
+    d.victimIC       = report_data.get("victimIC", "")
+    d.victimPhone    = report_data.get("victimPhone", "")
+    d.description    = report_data.get("description", "")
+    d.reportedToPolis = report_data.get("reportedToPolis", False)
+    d.reportedToBNM   = report_data.get("reportedToBNM", False)
 
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@router.get("/report/{session_id}/pdf")
-async def export_report_pdf(session_id: str):
-    """
-    Export the scam simulation report for a completed session as a PDF file.
-    Only available once the simulation has ended (scam_ended=true).
-    """
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-    if not session.get("scam_ended"):
-        raise HTTPException(status_code=400, detail="Report is only available after the simulation has ended.")
-    report = session.get("report")
-    if not report:
-        raise HTTPException(status_code=404, detail="No report found for this session.")
-
-    pdf_bytes = _generate_report_pdf(report, session_id)
-    filename = f"scam-report-{session_id[:8]}.pdf"
+    pdf_bytes = _build_pdf_layout2(d)
+    filename = f"scam-report-{d.reportId}.pdf"
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
