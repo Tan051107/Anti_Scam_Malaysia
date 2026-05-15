@@ -269,21 +269,21 @@ def _build_pdf_layout2(data) -> bytes:
     ])
 
     # Signature block
-    story.append(Spacer(1, 24))
-    sig = Table(
-        [["", ""],
-         ["________________________", "________________________"],
-         ["Reporter signature / Tandatangan pelapor",
-          "Officer signature / Tandatangan pegawai"]],
-        colWidths=[doc.width / 2, doc.width / 2],
-    )
-    sig.setStyle(TableStyle([
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#475569")),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, 0), 28),
-    ]))
-    story.append(sig)
+    # story.append(Spacer(1, 24))
+    # sig = Table(
+    #     [["", ""],
+    #      ["________________________", "________________________"],
+    #      ["Reporter signature / Tandatangan pelapor",
+    #       "Officer signature / Tandatangan pegawai"]],
+    #     colWidths=[doc.width / 2, doc.width / 2],
+    # )
+    # sig.setStyle(TableStyle([
+    #     ("FONTSIZE", (0, 0), (-1, -1), 9),
+    #     ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#475569")),
+    #     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    #     ("TOPPADDING", (0, 0), (-1, 0), 28),
+    # ]))
+    # story.append(sig)
 
     doc.build(story)
     pdf = buffer.getvalue()
