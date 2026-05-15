@@ -123,7 +123,8 @@ export default function ReportSimulator() {
     if (!reportData) return
     setExporting(true)
     try {
-      const response = await fetch('/api/simulator/report/export-pdf', {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || '/api'
+      const response = await fetch(`${apiBase}/simulator/report/export-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(reportData),
