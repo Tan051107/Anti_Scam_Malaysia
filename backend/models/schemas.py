@@ -47,7 +47,7 @@ class SimulatorChatRequest(BaseModel):
 
 class ScamReport(BaseModel):
     scam_type: str
-    red_flags: List[str]
+    key_observations: List[str]
     summary: str
     outcome: str             # "FAILED" | "SUCCESS"
     advice: str
@@ -57,7 +57,7 @@ class SimulatorChatResponse(BaseModel):
     reply: str
     session_id: str
     scam_ended: bool
-    user_caught_scam: bool
+    user_succeeded: bool
     report: Optional[ScamReport] = None
 
 

@@ -10,7 +10,7 @@ export default function ScamSimulator() {
   const { simulatorState, setSimulatorState, resetSimulator: resetSimulatorState, INTRO_EN, INTRO_MS } = useChatHistory()
 
   // Destructure persisted state from context
-  const { messages, sessionId, started, scamEnded, report, userCaught, sessionLang } = simulatorState
+  const { messages, sessionId, started, scamEnded, report, userSucceeded, sessionLang } = simulatorState
 
   // Helpers to update individual fields
   const setMessages    = (fn) => setSimulatorState((s) => ({ ...s, messages: typeof fn === 'function' ? fn(s.messages) : fn }))
@@ -18,7 +18,7 @@ export default function ScamSimulator() {
   const setStarted     = (v)  => setSimulatorState((s) => ({ ...s, started: v }))
   const setScamEnded   = (v)  => setSimulatorState((s) => ({ ...s, scamEnded: v }))
   const setReport      = (v)  => setSimulatorState((s) => ({ ...s, report: v }))
-  const setUserCaught  = (v)  => setSimulatorState((s) => ({ ...s, userCaught: v }))
+  const setUserSucceeded = (v) => setSimulatorState((s) => ({ ...s, userSucceeded: v }))
   const setSessionLang = (v)  => setSimulatorState((s) => ({ ...s, sessionLang: v }))
 
   // Local-only UI state
@@ -93,7 +93,7 @@ export default function ScamSimulator() {
 
       if (data.scam_ended) {
         setScamEnded(true)
-        setUserCaught(data.user_caught_scam)
+        setUserSucceeded(data.user_succeeded)
         if (data.report) {
           setReport(data.report)
           setTimeout(() => setShowReport(true), 800)
@@ -226,8 +226,8 @@ export default function ScamSimulator() {
           </button>
         ) : scamEnded ? (
           <div className="flex gap-2">
-            <div className={`flex-1 text-center py-3 rounded-xl font-bold text-sm ${userCaught ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-              {userCaught ? t('sim_ended_success') : t('sim_ended_fail')}
+            <div className={`flex-1 text-center py-3 rounded-xl font-bold text-sm ${userSucceeded ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+              {report?.outcome || (userSucceeded ? t('sim_ended_success') : t('sim_ended_fail'))}
             </div>
             <button
               onClick={() => setShowReport(true)}
@@ -275,9 +275,9 @@ export default function ScamSimulator() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             {/* Modal header */}
-            <div className={`p-5 rounded-t-2xl ${userCaught ? 'bg-green-600' : 'bg-red-600'} text-white`}>
+            <div className={`p-5 rounded-t-2xl ${userSucceeded ? 'bg-green-600' : 'bg-red-600'} text-white`}>
               <div className="flex items-center gap-3 mb-2">
-                {userCaught ? (
+                {userSucceeded ? (
                   <CheckCircle className="w-8 h-8" />
                 ) : (
                   <XCircle className="w-8 h-8" />
@@ -287,8 +287,8 @@ export default function ScamSimulator() {
                   <p className="text-sm opacity-90">{t('sim_report_subtitle')}</p>
                 </div>
               </div>
-              <div className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${userCaught ? 'bg-green-800' : 'bg-red-800'}`}>
-                {t('sim_report_outcome_label')} {userCaught ? t('sim_report_outcome_success') : t('sim_report_outcome_fail')}
+              <div className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${userSucceeded ? 'bg-green-800' : 'bg-red-800'}`}>
+                {t('sim_report_outcome_label')} {report.outcome || (userSucceeded ? t('sim_report_outcome_success') : t('sim_report_outcome_fail'))}
               </div>
             </div>
 
@@ -305,7 +305,7 @@ export default function ScamSimulator() {
               <div>
                 <h3 className="font-bold text-gray-900 text-sm mb-2">{t('sim_report_red_flags')}</h3>
                 <ul className="space-y-2">
-                  {report.red_flags.map((flag, i) => (
+                  {report.key_observations.map((flag, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-gray-700 bg-red-50 border border-red-100 px-3 py-2 rounded-lg">
                       <span className="text-red-500 flex-shrink-0 mt-0.5">⚠️</span>
                       {flag}
@@ -325,7 +325,7 @@ export default function ScamSimulator() {
               {/* Advice */}
               <div>
                 <h3 className="font-bold text-gray-900 text-sm mb-1">
-                  {userCaught ? t('sim_report_did_right') : t('sim_report_next_time')}
+                  {userSucceeded ? t('sim_report_did_right') : t('sim_report_next_time')}
                 </h3>
                 <p className="text-sm text-gray-600 bg-blue-50 border border-blue-200 px-3 py-2 rounded-lg leading-relaxed whitespace-pre-line">
                   {report.advice}

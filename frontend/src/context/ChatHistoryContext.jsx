@@ -24,8 +24,9 @@ const INTRO_EN = {
   text:
     '⚠️ SIMULATION MODE ⚠️\n\n' +
     'Welcome to the Scam Simulator!\n\n' +
-    'In this simulation, the bot will act as a scammer to help you identify common Malaysian scam tactics.\n\n' +
-    '🎯 Your goal: Identify the scam and refuse\n\n' +
+    'Each session is a realistic Malaysian message — it may be a real scam or a legitimate alert. ' +
+    'The bot will stay in character; you will not be told which until the end.\n\n' +
+    '🎯 Your goal: Verify before you act — spot scams, but do not panic over real notices\n\n' +
     'Press "Start Simulation" to begin.',
 }
 
@@ -35,8 +36,9 @@ const INTRO_MS = {
   text:
     '⚠️ MOD SIMULASI ⚠️\n\n' +
     'Selamat datang ke Simulator Penipuan!\n\n' +
-    'Dalam simulasi ini, bot akan berperanan sebagai penipu untuk membantu anda mengenal pasti taktik penipuan biasa di Malaysia.\n\n' +
-    '🎯 Matlamat anda: Kenal pasti penipuan dan tolak\n\n' +
+    'Setiap sesi ialah mesej realistik dari Malaysia — ia mungkin penipuan sebenar atau notis sah. ' +
+    'Bot kekal berperanan; anda tidak akan diberitahu sehingga simulasi tamat.\n\n' +
+    '🎯 Matlamat anda: Sahkan dahulu sebelum bertindak — kenal pasti penipuan tanpa panik terhadap notis sah\n\n' +
     'Tekan "Mulakan Simulasi" untuk bermula.',
 }
 
@@ -47,7 +49,7 @@ function makeSimulatorInitial(lang) {
     started: false,
     scamEnded: false,
     report: null,
-    userCaught: false,
+    userSucceeded: false,
     sessionLang: null,
   }
 }

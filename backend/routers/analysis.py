@@ -18,18 +18,11 @@ from models.schemas import (
     AnalysisChatResponse,
     AnalysisUploadResponse,
 )
+from bedrock_models import ANALYSIS_MODEL_ENV, get_model_id
 
 load_dotenv()
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
-
-# ─────────────────────────────────────────────
-# Models
-# Chat  → Haiku 4.5  (fast, cost-efficient, text)
-# Upload → Sonnet 3.5 v2 (best vision on Bedrock)
-# ─────────────────────────────────────────────
-CHAT_MODEL_ID   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-UPLOAD_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"  # Sonnet 4.5 blocked by SCP
 
 # ─────────────────────────────────────────────
 # Bedrock client — singleton
@@ -75,40 +68,56 @@ def _chat_system_prompt(language: str = "en") -> str:
         )
 
     return f"""You are ScamShield, an expert anti-scam analyst specialising in Malaysia.
-Your job is to analyse messages submitted by Malaysian users and determine whether they are scams.
+    Your job is to analyse messages submitted by Malaysian users and determine whether they are scams.
 
-Consider these Malaysia-specific scam types:
-- Bank impersonation: Maybank (hotline 1-300-88-6688), CIMB (1-300-880-900), RHB, Public Bank
-- Authority impersonation: PDRM (Royal Malaysia Police), LHDN (Inland Revenue Board), MCMC
-- E-commerce scams: Shopee, Lazada parcel/delivery scams
-- Macau scam (phone call impersonating authorities)
-- Love scam (romantic interest requesting money)
-- Investment scam (guaranteed returns, forex, crypto, MLM)
-- Job scam (too-good-to-be-true offers, upfront fees)
-- Phishing links (bit.ly, tinyurl, suspicious domains)
+    Consider these Malaysia-specific scam types:
+    - Bank impersonation: Maybank (hotline 1-300-88-6688), CIMB (1-300-880-900), RHB, Public Bank
+    - Authority impersonation: PDRM (Royal Malaysia Police), LHDN (Inland Revenue Board), MCMC
+    - E-commerce scams: Shopee, Lazada parcel/delivery scams
+    - Macau scam (phone call impersonating authorities)
+    - Love scam (romantic interest requesting money)
+    - Investment scam (guaranteed returns, forex, crypto, MLM)
+    - Job scam (too-good-to-be-true offers, upfront fees)
+    - Phishing links (bit.ly, tinyurl, suspicious domains)
 
-Rules:
-{lang_rule}
-- Be direct and clear about the risk level
-- Always recommend official reporting channels when risk is HIGH or CRITICAL:
-  CCID Polis: 03-2610 5000 | BNMTELELINK: 1-300-88-5465 | MCMC: 1-800-188-030
+    RISK SCORE RUBRIC (use this to assign risk_score and risk_level consistently):
+    - 0-24   → LOW      (no suspicious signals; routine message)
+    - 25-49  → MEDIUM   (some suspicious elements; proceed with caution)
+    - 50-79  → HIGH     (strong scam indicators; likely a scam)
+    - 80-100 → CRITICAL (confirmed scam pattern; do not engage)
 
-You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
-The JSON must have exactly these fields:
-{{
-  "reply": "<analysis and advice as a readable string>",
-  "risk_score": <integer 0-100>,
-  "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
-  "indicators": ["<indicator 1>", "<indicator 2>"],
-  "confidence": <integer 0-100>
-}}"""
+    Rules:
+    {lang_rule}
+    - Be direct and clear about the risk level
+    - Always recommend official reporting channels when risk is HIGH or CRITICAL:
+      CCID Polis: 03-2610 5000 | BNMTELELINK: 1-300-88-5465 | MCMC: 1-800-188-030
+    - List ONLY indicators actually present in the submitted message; do not list generic indicators
+    - If no indicators are present, return an empty array []. Never fabricate indicators.
+    - risk_level MUST match risk_score exactly: 0-24=LOW, 25-49=MEDIUM, 50-79=HIGH, 80-100=CRITICAL. Never contradict these bands.
+    - confidence reflects how certain you are of the risk assessment given the available evidence:
+      80-100: clear, unambiguous signals present
+      50-79: some signals present but message is vague or partial
+      20-49: very little to go on; assessment is tentative
+      0-19: insufficient information to assess
+
+    You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
+    The JSON must have exactly these fields:
+    {{
+      "reply": "<analysis and advice as a readable string>",
+      "risk_score": <integer 0-100>,
+      "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
+      "indicators": ["<indicator 1>", "<indicator 2>"],
+      "confidence": <integer 0-100>
+    }}
+
+    Before writing the JSON, silently reason: (1) what type of message is this, (2) which specific indicators from the message support your assessment, (3) assign risk_score, then derive risk_level from the rubric above. Never assign risk_level first and fit the score to it."""
 
 
 def _upload_system_prompt(language: str = "en") -> str:
     if language == "ms":
         lang_rule = (
             "- Balas SEPENUHNYA dalam Bahasa Malaysia (Melayu). "
-            "Jangan gunakan bahasa Inggeris kecuali untuk nama jenama, nombor hotline, atau istilah teknikal."
+            "Jangan gunakan bahasa Inggeris kecuali untuk nama jenama, nombor hotline, atau istilah teknikal yang tiada padanan Melayu."
         )
     else:
         lang_rule = (
@@ -117,32 +126,49 @@ def _upload_system_prompt(language: str = "en") -> str:
         )
 
     return f"""You are ScamShield, an expert anti-scam analyst specialising in Malaysia.
-Your job is to analyse images submitted by Malaysian users — these may be screenshots of messages,
-fake bank notices, suspicious QR codes, phishing emails, or fraudulent documents.
+    Your job is to analyse messages submitted by Malaysian users and determine whether they are scams.
 
-Consider these Malaysia-specific scam types:
-- Fake bank notices: Maybank, CIMB, RHB, Public Bank
-- Fake authority letters: PDRM, LHDN, MCMC, court summons
-- Fake e-commerce notifications: Shopee, Lazada
-- Phishing pages or QR codes
-- Fake job offers or investment schemes
-- Counterfeit receipts or transfer confirmations
+    Consider these Malaysia-specific scam types:
+    - Bank impersonation: Maybank (hotline 1-300-88-6688), CIMB (1-300-880-900), RHB, Public Bank
+    - Authority impersonation: PDRM (Royal Malaysia Police), LHDN (Inland Revenue Board), MCMC
+    - E-commerce scams: Shopee, Lazada parcel/delivery scams
+    - Macau scam (phone call impersonating authorities)
+    - Love scam (romantic interest requesting money)
+    - Investment scam (guaranteed returns, forex, crypto, MLM)
+    - Job scam (too-good-to-be-true offers, upfront fees)
+    - Phishing links (bit.ly, tinyurl, suspicious domains)
 
-Rules:
-{lang_rule}
-- Describe what you see in the image and why it is or isn't suspicious
-- Always recommend official reporting channels when risk is HIGH or CRITICAL:
-  CCID Polis: 03-2610 5000 | BNMTELELINK: 1-300-88-5465
+    RISK SCORE RUBRIC (use this to assign risk_score and risk_level consistently):
+    - 0-24   → LOW      (no suspicious signals; routine message)
+    - 25-49  → MEDIUM   (some suspicious elements; proceed with caution)
+    - 50-79  → HIGH     (strong scam indicators; likely a scam)
+    - 80-100 → CRITICAL (confirmed scam pattern; do not engage)
 
-You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
-The JSON must have exactly these fields:
-{{
-  "reply": "<analysis and advice as a readable string>",
-  "risk_score": <integer 0-100>,
-  "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
-  "indicators": ["<indicator 1>", "<indicator 2>"],
-  "confidence": <integer 0-100>
-}}"""
+    Rules:
+    {lang_rule}
+    - Be direct and clear about the risk level
+    - Always recommend official reporting channels when risk is HIGH or CRITICAL:
+      CCID Polis: 03-2610 5000 | BNMTELELINK: 1-300-88-5465 | MCMC: 1-800-188-030
+    - List ONLY indicators actually present in the submitted message; do not list generic indicators
+    - If no indicators are present, return an empty array []. Never fabricate indicators.
+    - risk_level MUST match risk_score exactly: 0-24=LOW, 25-49=MEDIUM, 50-79=HIGH, 80-100=CRITICAL. Never contradict these bands.
+    - confidence reflects how certain you are of the risk assessment given the available evidence:
+      80-100: clear, unambiguous signals present
+      50-79: some signals present but message is vague or partial
+      20-49: very little to go on; assessment is tentative
+      0-19: insufficient information to assess
+
+    You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
+    The JSON must have exactly these fields:
+    {{
+      "reply": "<analysis and advice as a readable string>",
+      "risk_score": <integer 0-100>,
+      "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
+      "indicators": ["<indicator 1>", "<indicator 2>"],
+      "confidence": <integer 0-100>
+    }}
+
+    Before writing the JSON, silently reason: (1) what type of message is this, (2) which specific indicators from the message support your assessment, (3) assign risk_score, then derive risk_level from the rubric above. Never assign risk_level first and fit the score to it."""
 
 
 # ─────────────────────────────────────────────
@@ -156,6 +182,7 @@ def _invoke(model_id: str, system_prompt: str, messages: list, max_tokens: int =
     body_dict = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": max_tokens,
+        "temperature" : 0,
         "system": system_prompt,
         "messages": messages,
     }
@@ -245,7 +272,7 @@ def _invoke(model_id: str, system_prompt: str, messages: list, max_tokens: int =
 @router.post("/chat", response_model=AnalysisChatResponse)
 async def analysis_chat(request: AnalysisChatRequest):
     """
-    Analyse a text message for scam indicators using Claude Haiku 4.5.
+    Analyse a text message for scam indicators using Claude Sonnet 4.6.
     Maintains per-session conversation history.
     """
     if not request.message.strip():
@@ -265,7 +292,7 @@ async def analysis_chat(request: AnalysisChatRequest):
 
     # Call Bedrock with the language-aware system prompt
     result = _invoke(
-        model_id=CHAT_MODEL_ID,
+        model_id=get_model_id(ANALYSIS_MODEL_ENV),
         system_prompt=_chat_system_prompt(language),
         messages=messages,
     )
@@ -304,7 +331,7 @@ async def analysis_upload(
     language: str = Query("en", description="Response language: en or ms"),
 ):
     """
-    Analyse an uploaded image for scam indicators using Claude Sonnet 3.5 v2 (vision).
+    Analyse an uploaded image for scam indicators using Claude Sonnet 4.6 (vision).
     Supports: screenshots of messages, fake bank notices, suspicious QR codes.
     """
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -339,7 +366,7 @@ async def analysis_upload(
     }]
 
     result = _invoke(
-        model_id=UPLOAD_MODEL_ID,
+        model_id=get_model_id(ANALYSIS_MODEL_ENV),
         system_prompt=_upload_system_prompt(language),
         messages=messages,
         max_tokens=1536,

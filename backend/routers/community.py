@@ -29,14 +29,14 @@ from database import get_db
 from models.orm import CommunityPost, PostUpvote, User
 from auth import get_current_user, get_current_user_optional
 from routers.analysis import get_bedrock_client
+from bedrock_models import COMMUNITY_MODEL_ENV, get_model_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/community", tags=["community"])
 
-S3_BUCKET        = os.getenv("S3_BUCKET_NAME")
-AWS_REGION       = os.getenv("AWS_REGION", "us-east-1")
-EXTRACT_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+S3_BUCKET  = os.getenv("S3_BUCKET_NAME")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB — Textract hard limit
 
@@ -116,7 +116,7 @@ def _extract_message_from_image(image_bytes: bytes, content_type: str) -> str:
                 )},
             ]}],
         })
-        response = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
+        response = client.invoke_model(modelId=get_model_id(COMMUNITY_MODEL_ENV), body=body)
         extracted = json.loads(response["body"].read())["content"][0]["text"].strip()
         return extracted if extracted else ""
     except Exception as exc:
@@ -152,7 +152,7 @@ def _extract_scam_content(text: str) -> str:
                 "Extract and return only the scam/suspicious message content from the text above."
             )}],
         })
-        response = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
+        response = client.invoke_model(modelId=get_model_id(COMMUNITY_MODEL_ENV), body=body)
         extracted = json.loads(response["body"].read())["content"][0]["text"].strip()
         return extracted if extracted else text
     except Exception as exc:
@@ -169,10 +169,11 @@ def _censor_text(text: str) -> str:
         return text
     try:
         client = get_bedrock_client()
+        safe_text = text.replace("</text_to_censor>", "")
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 1024,
-            "messages": [{"role": "user", "content": (
+            "system": (
                 "You are a privacy protection tool. Replace ALL personally identifiable information (PII) "
                 "in the following text with these exact placeholders:\n"
                 "- Full names -> [NAME]\n"
@@ -183,11 +184,14 @@ def _censor_text(text: str) -> str:
                 "- Home/office addresses -> [ADDRESS]\n"
                 "- Passport numbers -> [PASSPORT]\n"
                 "- URLs and web links (http, https, www, or any domain link) -> [URL]\n\n"
-                "Keep all other text exactly as-is. Return ONLY the censored text, nothing else.\n\n"
-                f"Text to censor:\n{text}"
+                "Keep all other text exactly as-is. Return ONLY the censored text, nothing else."
+            ),
+            "messages": [{"role": "user", "content": (
+                f"<text_to_censor>\n{safe_text}\n</text_to_censor>\n\n"
+                "Censor the text above and return it."
             )}],
         })
-        response = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
+        response = client.invoke_model(modelId=get_model_id(COMMUNITY_MODEL_ENV), body=body)
         censored = json.loads(response["body"].read())["content"][0]["text"].strip()
         return censored if censored else text
     except Exception:
@@ -394,30 +398,32 @@ def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None
 
             try:
                 client = get_bedrock_client()
+                words_payload = json.dumps([
+                    w["text"].replace("</words_to_classify>", "") for w in ambiguous_words
+                ])
+                safe_context = structured_context.replace("</document_context>", "")
                 body = json.dumps({
                     "anthropic_version": "bedrock-2023-05-31",
                     "max_tokens": 512,
-                    "messages": [{"role": "user", "content": (
+                    "system": (
                         "You are a PII detection tool. Using the structured document context below, "
                         "identify which of these specific words are personally identifiable information. "
                         "Flag ALL of the following regardless of where they appear in the document:\n"
                         "- Personal names (first names, last names, full names, partial names)\n"
                         "- Physical addresses (street names, house numbers, city names, postcodes)\n"
-                        "- Any other PII not already handled (phone/IC/email are already redacted)\n\n"
-                        f"Words to classify: {json.dumps([w['text'] for w in ambiguous_words])}\n\n"
-                        f"Document context:\n{structured_context}\n\n"
-                        "Return ONLY a JSON array of the exact PII tokens from the words list above.\n"
-                        "Example: [\"Ahmad\", \"bin\", \"Ali\", \"Jalan\", \"Ampang\"]\n"
+                        "- Any other PII not already handled (phone/IC/email are already redacted)"
+                    ),
+                    "messages": [{"role": "user", "content": (
+                        f"<words_to_classify>\n{words_payload}\n</words_to_classify>\n\n"
+                        f"<document_context>\n{safe_context}\n</document_context>\n\n"
+                        "Return a JSON array of the exact PII tokens from the words list above. "
                         "If none are PII, return: []"
                     )}],
                 })
-                r = client.invoke_model(modelId=EXTRACT_MODEL_ID, body=body)
+                r = client.invoke_model(modelId=get_model_id(COMMUNITY_MODEL_ENV), body=body)
                 raw = json.loads(r["body"].read())["content"][0]["text"].strip()
-                if raw.startswith("```"):
-                    raw = raw.split("```")[1]
-                    if raw.startswith("json"):
-                        raw = raw[4:]
-                    raw = raw.strip()
+                raw = re.sub(r'^```(?:json)?\s*', '', raw)
+                raw = re.sub(r'\s*```$', '', raw)
                 for token in json.loads(raw):
                     pii_set.add(token.lower().strip(".,!?;:\"'()[]"))
             except Exception as exc:
