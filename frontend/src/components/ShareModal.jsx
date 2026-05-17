@@ -94,7 +94,7 @@ export default function ShareModal({ analysisData, onClose }) {
               {/* Risk summary */}
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-medium text-gray-500">Risk Score</span>
+                  <span className="text-xs font-medium text-gray-500">{t('share_risk_score_label')}</span>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                     analysisData.risk_level === 'CRITICAL' ? 'bg-red-100 text-red-700' :
                     analysisData.risk_level === 'HIGH'     ? 'bg-orange-100 text-orange-700' :
@@ -111,7 +111,7 @@ export default function ShareModal({ analysisData, onClose }) {
                       className="w-full max-h-32 object-cover rounded-lg border border-gray-200"
                     />
                     <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
-                      🤖 Suspicious message will be auto-extracted from this image
+                      {t('share_auto_extract')}
                     </p>
                   </div>
                 ) : (
