@@ -329,10 +329,13 @@ async def clear_chat_history(session_id: str):
 async def analysis_upload(
     file: UploadFile = File(...),
     language: str = Query("en", description="Response language: en or ms"),
+    session_id: str = Query(None, description="Session ID to persist image analysis in chat history"),
 ):
     """
     Analyse an uploaded image for scam indicators using Claude Sonnet 4.6 (vision).
     Supports: screenshots of messages, fake bank notices, suspicious QR codes.
+    If session_id is provided, the image analysis is stored in chat history so
+    follow-up text questions have context.
     """
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
     if file.content_type not in allowed_types:
@@ -344,7 +347,7 @@ async def analysis_upload(
     image_data = await file.read()
     b64 = base64.b64encode(image_data).decode("utf-8")
 
-    messages = [{
+    user_turn = {
         "role": "user",
         "content": [
             {
@@ -363,7 +366,12 @@ async def analysis_upload(
                 ),
             },
         ],
-    }]
+    }
+
+    # Include existing history so the model has full context
+    sid = session_id or str(uuid.uuid4())
+    history = _history.setdefault(sid, [])
+    messages = history + [user_turn]
 
     result = _invoke(
         model_id=get_model_id(ANALYSIS_MODEL_ENV),
@@ -371,6 +379,16 @@ async def analysis_upload(
         messages=messages,
         max_tokens=1536,
     )
+
+    # Store the image turn and reply in history so follow-up text questions have context.
+    # Store a text-only summary of the user turn (base64 is too large to keep in history).
+    history.append({
+        "role": "user",
+        "content": f"[User uploaded an image: {file.filename}] Please analyse this image for scam indicators.",
+    })
+    history.append({"role": "assistant", "content": result.get("reply", "")})
+    if len(history) > MAX_TURNS:
+        _history[sid] = history[-MAX_TURNS:]
 
     indicators = result.get("indicators") or ["No specific scam indicators detected"]
 
@@ -381,4 +399,5 @@ async def analysis_upload(
         indicators=indicators,
         confidence=int(result.get("confidence", 0)),
         filename=file.filename,
+        session_id=sid,
     )

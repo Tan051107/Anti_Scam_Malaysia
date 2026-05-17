@@ -93,8 +93,9 @@ export async function sendAnalysisMessage(message, sessionId = null, language = 
 export async function uploadAnalysisImage(file, sessionId = null, language = 'en') {
   const formData = new FormData()
   formData.append('file', file)
-  if (sessionId) formData.append('session_id', sessionId)
-  const res = await api.post(`/analysis/upload?language=${language}`, formData, {
+  const params = new URLSearchParams({ language })
+  if (sessionId) params.append('session_id', sessionId)
+  const res = await api.post(`/analysis/upload?${params.toString()}`, formData, {
     headers: { 'Content-Type': undefined },  // let axios set multipart + boundary automatically
   })
   return res.data

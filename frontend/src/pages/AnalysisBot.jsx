@@ -18,7 +18,7 @@ function RiskAssessmentContent({ riskData, canShare, onShare, getRiskLevelColor,
 
       <RiskGauge score={riskData.score} riskLevel={riskData.level} confidence={riskData.confidence} />
 
-      {/* Share button — shown when risk >= 60% */}
+      {/* Share button — shown when risk >= 50% */}
       {canShare && (
         <button
           onClick={onShare}
@@ -194,7 +194,7 @@ export default function AnalysisBot() {
     }
   }
 
-  const canShare = riskData.score >= 60 && lastMessage
+  const canShare = riskData.score >= 50 && lastMessage
 
   return (
     <div className="h-[calc(100vh-5rem)] flex flex-col">

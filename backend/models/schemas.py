@@ -33,6 +33,7 @@ class AnalysisUploadResponse(BaseModel):
     indicators: List[str]
     confidence: int
     filename: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 # ─────────────────────────────────────────────
