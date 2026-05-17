@@ -356,22 +356,25 @@ def _build_pdf_layout2(data) -> bytes:
     story.append(desc_table)
     story.append(Spacer(1, 4 * mm))
 
-    # ── SECTION D — Required Actions ─────────────────────────────────────────
+# ── SECTION D — Required Actions ─────────────────────────────────────────
     _section_header("SECTION D — REQUIRED ACTIONS", "Tindakan Diperlukan")
     actions = [
-        "File a police report at your nearest police station",
-        "Contact your bank immediately if money was transferred",
-        "Report to CCID: 03-2610 5000",
-        "Report to BNM TELELINK: 1-300-88-5465",
-        "Check mule accounts at: www.semakmule.rmp.gov.my",
-        "Report to MCMC: aduan.mcmc.gov.my",
+        "File a police report at your nearest police station / Buat laporan polis di balai polis berhampiran",
+        "Contact your bank immediately if money was transferred / Hubungi bank anda dengan segera jika wang telah dipindahkan",
+        "Report to National Scam Response Centre (NSRC) / Lapor kepada Pusat Respons Scam Kebangsaan (NSRC): 997",
+        "Report to CCID / Lapor kepada JSJK (CCID): 03-2610 5000",
+        "Report to BNM TELELINK / Lapor kepada BNM TELELINK: 1-300-88-5465",
+        "Check mule accounts at / Semak akaun keldai di: www.semakmule.rmp.gov.my",
+        "Report to MCMC / Lapor kepada SKMM (MCMC): aduan.mcmc.gov.my",
     ]
+    
     action_rows = []
     for i, act in enumerate(actions, 1):
         action_rows.append([
             Paragraph(f"<b>{i}</b>", action_style),
             Paragraph(act, action_style),
         ])
+        
     action_table = Table(action_rows, colWidths=[8 * mm, doc.width - 8 * mm])
     action_table.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, -1), LIGHT),
