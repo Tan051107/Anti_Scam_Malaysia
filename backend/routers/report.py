@@ -263,27 +263,67 @@ def _build_pdf_layout2(data) -> bytes:
         ["Amount / Jumlah", _money(getattr(data, "amountLost", 0))],
         ["Bank involved / Bank terlibat", _fmt(getattr(data, "bank", None))],
     ])
-    _section("D", "Description", "Keterangan", [
-        ["Narrative / Keterangan",
-         Paragraph(_fmt(getattr(data, "description", None), "—"), body)],
+
+    # ── SECTION B — Victim Information ───────────────────────────────────────
+    victim_name  = _fmt(getattr(data, "victimName",  None))
+    victim_ic    = _fmt(getattr(data, "victimIC",    None))
+    victim_phone = _fmt(getattr(data, "victimPhone", None))
+
+    _section_header("SECTION B — VICTIM INFORMATION", "Maklumat Mangsa")
+    _data_table([
+        ("Name / Nama",              victim_name),
+        ("IC Number / Nombor IC",    victim_ic),
+        ("Phone / Telefon",          victim_phone),
     ])
 
-    # Signature block
-    # story.append(Spacer(1, 24))
-    # sig = Table(
-    #     [["", ""],
-    #      ["________________________", "________________________"],
-    #      ["Reporter signature / Tandatangan pelapor",
-    #       "Officer signature / Tandatangan pegawai"]],
-    #     colWidths=[doc.width / 2, doc.width / 2],
-    # )
-    # sig.setStyle(TableStyle([
-    #     ("FONTSIZE", (0, 0), (-1, -1), 9),
-    #     ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#475569")),
-    #     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-    #     ("TOPPADDING", (0, 0), (-1, 0), 28),
-    # ]))
-    # story.append(sig)
+    # ── SECTION C — Description of Incident ──────────────────────────────────
+    _section_header("SECTION C — DESCRIPTION OF INCIDENT", "Keterangan Insiden")
+    desc_table = Table(
+        [[Paragraph(_fmt(getattr(data, "description", None), "No description provided."),
+                    body_style)]],
+        colWidths=[doc.width],
+    )
+    desc_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",    (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(desc_table)
+    story.append(Spacer(1, 4 * mm))
+
+# ── SECTION D — Required Actions ─────────────────────────────────────────
+    _section_header("SECTION D — REQUIRED ACTIONS", "Tindakan Diperlukan")
+    actions = [
+        "File a police report at your nearest police station / Buat laporan polis di balai polis berhampiran",
+        "Contact your bank immediately if money was transferred / Hubungi bank anda dengan segera jika wang telah dipindahkan",
+        "Report to National Scam Response Centre (NSRC) / Lapor kepada Pusat Respons Scam Kebangsaan (NSRC): 997",
+        "Report to CCID / Lapor kepada JSJK (CCID): 03-2610 5000",
+        "Report to BNM TELELINK / Lapor kepada BNM TELELINK: 1-300-88-5465",
+        "Check mule accounts at / Semak akaun keldai di: www.semakmule.rmp.gov.my",
+        "Report to MCMC / Lapor kepada SKMM (MCMC): aduan.mcmc.gov.my",
+    ]
+    
+    action_rows = []
+    for i, act in enumerate(actions, 1):
+        action_rows.append([
+            Paragraph(f"<b>{i}</b>", action_style),
+            Paragraph(act, action_style),
+        ])
+        
+    action_table = Table(action_rows, colWidths=[8 * mm, doc.width - 8 * mm])
+    action_table.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT),
+        ("LEFTPADDING",   (0, 0), (0, -1), 8),
+        ("LEFTPADDING",   (1, 0), (1, -1), 4),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.3, colors.HexColor("#E2E8F0")),
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(action_table)
 
     doc.build(story)
     pdf = buffer.getvalue()
