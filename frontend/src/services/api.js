@@ -151,18 +151,18 @@ export async function apiRefreshToken(refreshToken) {
 // ─────────────────────────────────────────────
 // Community
 // ─────────────────────────────────────────────
-export async function getCommunityPosts(limit = 20, offset = 0) {
-  const res = await api.get('/community/posts', { params: { limit, offset } })
+export async function getCommunityPosts(limit = 20, offset = 0, sort = 'upvotes') {
+  const res = await api.get('/community/posts', { params: { limit, offset, sort } })
   return res.data
 }
 
 export async function getRecentPosts(limit = 3) {
-  const res = await api.get('/community/posts', { params: { limit, offset: 0 } })
+  const res = await api.get('/community/posts', { params: { limit, offset: 0, sort: 'newest' } })
   return res.data
 }
 
-export async function getMyPosts(limit = 20, offset = 0) {
-  const res = await api.get('/community/posts/mine', { params: { limit, offset } })
+export async function getMyPosts(limit = 20, offset = 0, sort = 'newest') {
+  const res = await api.get('/community/posts/mine', { params: { limit, offset, sort } })
   return res.data
 }
 

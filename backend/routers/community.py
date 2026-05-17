@@ -19,7 +19,9 @@ import logging
 import difflib
 import boto3
 from PIL import Image, ImageDraw
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from enum import Enum
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 from pydantic import BaseModel
@@ -34,6 +36,26 @@ from bedrock_models import COMMUNITY_MODEL_ENV, get_model_id
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/community", tags=["community"])
+
+
+class PostSort(str, Enum):
+    upvotes = "upvotes"
+    least_upvotes = "least_upvotes"
+    newest = "newest"
+    oldest = "oldest"
+
+
+def _apply_post_sort(query, sort: PostSort, upvote_count_col):
+    """Order community post queries — sorting is always done in the database."""
+    if sort == PostSort.newest:
+        return query.order_by(desc(CommunityPost.created_at))
+    if sort == PostSort.oldest:
+        return query.order_by(CommunityPost.created_at)
+    if sort == PostSort.least_upvotes:
+        return query.order_by(upvote_count_col, desc(CommunityPost.created_at))
+    # default: upvotes desc, then newest
+    return query.order_by(desc(upvote_count_col), desc(CommunityPost.created_at))
+
 
 S3_BUCKET  = os.getenv("S3_BUCKET_NAME")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -619,7 +641,9 @@ async def create_post(
 
 @router.get("/posts", response_model=PostListResponse)
 async def list_posts(
-    limit: int = 20, offset: int = 0,
+    limit: int = 20,
+    offset: int = 0,
+    sort: PostSort = Query(PostSort.upvotes, description="upvotes | newest"),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
@@ -632,15 +656,15 @@ async def list_posts(
         select(PostUpvote.post_id, func.count(PostUpvote.id).label("upvote_count"))
         .group_by(PostUpvote.post_id).subquery()
     )
-    result = await db.execute(
-        select(CommunityPost, User.username, User.full_name,
-               func.coalesce(upvote_sq.c.upvote_count, 0).label("upvote_count"))
+    upvote_count_col = func.coalesce(upvote_sq.c.upvote_count, 0)
+    stmt = (
+        select(CommunityPost, User.username, User.full_name, upvote_count_col.label("upvote_count"))
         .join(User, CommunityPost.user_id == User.id)
         .outerjoin(upvote_sq, CommunityPost.id == upvote_sq.c.post_id)
         .where(CommunityPost.is_published == True)
-        .order_by(desc(func.coalesce(upvote_sq.c.upvote_count, 0)), desc(CommunityPost.created_at))
-        .limit(limit).offset(offset)
     )
+    stmt = _apply_post_sort(stmt, sort, upvote_count_col).limit(limit).offset(offset)
+    result = await db.execute(stmt)
     rows = result.all()
 
     upvoted_ids: set = set()
@@ -673,7 +697,9 @@ async def list_posts(
 
 @router.get("/posts/mine", response_model=PostListResponse)
 async def list_my_posts(
-    limit: int = 20, offset: int = 0,
+    limit: int = 20,
+    offset: int = 0,
+    sort: PostSort = Query(PostSort.newest, description="upvotes | newest"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -687,13 +713,14 @@ async def list_my_posts(
         select(PostUpvote.post_id, func.count(PostUpvote.id).label("upvote_count"))
         .group_by(PostUpvote.post_id).subquery()
     )
-    result = await db.execute(
-        select(CommunityPost, func.coalesce(upvote_sq.c.upvote_count, 0).label("upvote_count"))
+    upvote_count_col = func.coalesce(upvote_sq.c.upvote_count, 0)
+    stmt = (
+        select(CommunityPost, upvote_count_col.label("upvote_count"))
         .outerjoin(upvote_sq, CommunityPost.id == upvote_sq.c.post_id)
         .where(CommunityPost.user_id == current_user.id, CommunityPost.is_published == True)
-        .order_by(desc(CommunityPost.created_at))
-        .limit(limit).offset(offset)
     )
+    stmt = _apply_post_sort(stmt, sort, upvote_count_col).limit(limit).offset(offset)
+    result = await db.execute(stmt)
     rows = result.all()
 
     posts = []

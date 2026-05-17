@@ -264,6 +264,7 @@ export default function Community() {
   const { t, lang } = useLanguage()
 
   const [activeTab, setActiveTab] = useState('all')  // 'all' | 'mine'
+  const [sortBy, setSortBy]       = useState('upvotes')  // 'upvotes' | 'newest'
   const [posts, setPosts]         = useState([])
   const [total, setTotal]         = useState(0)
   const [loading, setLoading]     = useState(true)
@@ -271,13 +272,13 @@ export default function Community() {
   const [offset, setOffset]       = useState(0)
   const LIMIT = 12
 
-  const fetchPosts = useCallback(async (tab = activeTab, off = 0) => {
+  const fetchPosts = useCallback(async (tab = activeTab, off = 0, sort = sortBy) => {
     setLoading(true)
     setError(null)
     try {
       const data = tab === 'mine'
-        ? await getMyPosts(LIMIT, off)
-        : await getCommunityPosts(LIMIT, off)
+        ? await getMyPosts(LIMIT, off, sort)
+        : await getCommunityPosts(LIMIT, off, sort)
       if (off === 0) {
         setPosts(data.posts)
       } else {
@@ -290,9 +291,9 @@ export default function Community() {
     } finally {
       setLoading(false)
     }
-  }, [activeTab])
+  }, [activeTab, sortBy])
 
-  useEffect(() => { fetchPosts(activeTab, 0) }, [activeTab])
+  useEffect(() => { fetchPosts(activeTab, 0) }, [activeTab, sortBy, fetchPosts])
 
   const handleTabChange = (tab) => {
     if (tab === activeTab) return
@@ -306,11 +307,18 @@ export default function Community() {
     setTotal((n) => n - 1)
   }
 
-  const handleUpvote = (id, upvote_count, has_upvoted) => {
-    setPosts((prev) => prev
-      .map((p) => p.id === id ? { ...p, upvote_count, has_upvoted } : p)
-      .sort((a, b) => b.upvote_count - a.upvote_count || new Date(b.created_at) - new Date(a.created_at))
-    )
+  const handleUpvote = async (id, upvote_count, has_upvoted) => {
+    setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, upvote_count, has_upvoted } : p)))
+    if (sortBy !== 'upvotes') return
+    try {
+      const reloadCount = Math.max(posts.length, LIMIT)
+      const data = activeTab === 'mine'
+        ? await getMyPosts(reloadCount, 0, sortBy)
+        : await getCommunityPosts(reloadCount, 0, sortBy)
+      setPosts(data.posts)
+    } catch {
+      // Keep optimistic update if re-fetch fails
+    }
   }
 
   return (
@@ -379,14 +387,33 @@ export default function Community() {
             )}
           </div>
 
-          <button
-            onClick={() => fetchPosts(activeTab, 0)}
-            disabled={loading}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            {t('community_refresh')}
-          </button>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              <span className="font-medium text-gray-500">{t('community_sort')}</span>
+              <select
+                value={sortBy}
+                onChange={(e) => {
+                  setSortBy(e.target.value)
+                  setPosts([])
+                  setOffset(0)
+                }}
+                className="bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+              >
+                <option value="upvotes">{t('community_sort_upvotes')}</option>
+                <option value="least_upvotes">{t('community_sort_least_upvotes')}</option>
+                <option value="newest">{t('community_sort_newest')}</option>
+                <option value="oldest">{t('community_sort_oldest')}</option>
+              </select>
+            </label>
+            <button
+              onClick={() => fetchPosts(activeTab, 0)}
+              disabled={loading}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              {t('community_refresh')}
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -432,7 +459,7 @@ export default function Community() {
             {posts.length < total && (
               <div className="text-center mt-8">
                 <button
-                  onClick={() => fetchPosts(activeTab, offset + LIMIT)}
+                  onClick={() => fetchPosts(activeTab, offset + LIMIT, sortBy)}
                   disabled={loading}
                 className="bg-brand-primary hover:bg-brand-primary-dark text-white font-bold px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2 mx-auto"
                 >
