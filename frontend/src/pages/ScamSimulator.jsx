@@ -3,46 +3,29 @@ import { Send, RotateCcw, Play, AlertTriangle, Loader2, CheckCircle, XCircle } f
 import ChatBubble from '../components/ChatBubble'
 import { sendSimulatorMessage, resetSimulator } from '../services/api'
 import { useLanguage } from '../context/LanguageContext'
-
-const INTRO_MESSAGE_EN = {
-  id: 'intro-en', // Changed from 'intro'
-  isBot: true,
-  text:
-    '⚠️ SIMULATION MODE ⚠️\n\n' +
-    'Welcome to the Scam Simulator!\n\n' +
-    'In this simulation, the bot will act as a scammer to help you identify common Malaysian scam tactics.\n\n' +
-    '🎯 Your goal: Identify the scam and refuse\n\n' +
-    'Press "Start Simulation" to begin.',
-}
-
-const INTRO_MESSAGE_MS = {
-  id: 'intro-ms', // Changed from 'intro'
-  isBot: true,
-  text:
-    '⚠️ MOD SIMULASI ⚠️\n\n' +
-    'Selamat datang ke Simulator Penipuan!\n\n' +
-    'Dalam simulasi ini, bot akan berperanan sebagai penipu untuk membantu anda mengenal pasti taktik penipuan biasa di Malaysia.\n\n' +
-    '🎯 Matlamat anda: Kenal pasti penipuan dan tolak\n\n' +
-    'Tekan "Mulakan Simulasi" untuk bermula.',
-}
+import { useChatHistory } from '../context/ChatHistoryContext'
 
 export default function ScamSimulator() {
   const { lang, t } = useLanguage()
+  const { simulatorState, setSimulatorState, resetSimulator: resetSimulatorState, INTRO_EN, INTRO_MS } = useChatHistory()
 
-  // Lazy initialiser — reads lang at mount time so navigating here after
-  // switching language on another page shows the correct intro immediately
-  const [messages, setMessages] = useState(() => [lang === 'ms' ? INTRO_MESSAGE_MS : INTRO_MESSAGE_EN])
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [sessionId, setSessionId] = useState(null)
-  const [started, setStarted] = useState(false)
-  const [scamEnded, setScamEnded] = useState(false)
-  const [report, setReport] = useState(null)
-  const [userCaught, setUserCaught] = useState(false)
+  // Destructure persisted state from context
+  const { messages, sessionId, started, scamEnded, report, userCaught, sessionLang } = simulatorState
+
+  // Helpers to update individual fields
+  const setMessages    = (fn) => setSimulatorState((s) => ({ ...s, messages: typeof fn === 'function' ? fn(s.messages) : fn }))
+  const setSessionId   = (v)  => setSimulatorState((s) => ({ ...s, sessionId: v }))
+  const setStarted     = (v)  => setSimulatorState((s) => ({ ...s, started: v }))
+  const setScamEnded   = (v)  => setSimulatorState((s) => ({ ...s, scamEnded: v }))
+  const setReport      = (v)  => setSimulatorState((s) => ({ ...s, report: v }))
+  const setUserCaught  = (v)  => setSimulatorState((s) => ({ ...s, userCaught: v }))
+  const setSessionLang = (v)  => setSimulatorState((s) => ({ ...s, sessionLang: v }))
+
+  // Local-only UI state
+  const [input, setInput]           = useState('')
+  const [loading, setLoading]       = useState(false)
   const [showReport, setShowReport] = useState(false)
-  const [error, setError] = useState(null)
-  // Track the language the current session was started in
-  const [sessionLang, setSessionLang] = useState(null)
+  const [error, setError]           = useState(null)
 
   const messagesEndRef = useRef(null)
 
@@ -50,17 +33,11 @@ export default function ScamSimulator() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // React to language changes while on this page
-  // isFirstRender guard removed — the lazy useState initialiser handles the
-  // mount case correctly, so this effect only needs to handle live switches
   useEffect(() => {
     if (!started) {
-      // Not yet started — swap the intro message to the new language
-      setMessages([lang === 'ms' ? INTRO_MESSAGE_MS : INTRO_MESSAGE_EN])
+      setMessages([lang === 'ms' ? INTRO_MS : INTRO_EN])
       return
     }
-
-    // Conversation is active or ended — intro message is frozen, only append a notice pill
     if (scamEnded) {
       const notice = lang === 'ms'
         ? '🌐 Bahasa ditukar kepada Bahasa Malaysia.\n\nSesi ini telah tamat dalam bahasa sebelumnya. Tekan "Cuba Lagi" untuk memulakan simulasi baru dalam Bahasa Malaysia.'
@@ -71,7 +48,6 @@ export default function ScamSimulator() {
         { id: `lang-notice-${Date.now()}`, isBot: true, text: notice, timestamp: ts, isNotice: true },
       ])
     }
-    // Active simulation: banner shown via JSX (sessionLang !== lang), no message injection
   }, [lang])
 
   const addMessage = (text, isBot) => {
@@ -141,17 +117,16 @@ export default function ScamSimulator() {
     setLoading(true)
     try {
       const data = await resetSimulator(sessionId)
-      setSessionId(data.session_id)
-    } catch (_) {}
-    setMessages([lang === 'ms' ? INTRO_MESSAGE_MS : INTRO_MESSAGE_EN])
-    setStarted(false)
-    setScamEnded(false)
-    setReport(null)
-    setShowReport(false)
-    setUserCaught(false)
+      // Reset context state to initial
+      resetSimulatorState(lang)
+      // Update sessionId from server response
+      setSimulatorState((s) => ({ ...s, sessionId: data.session_id }))
+    } catch (_) {
+      resetSimulatorState(lang)
+    }
     setInput('')
     setError(null)
-    setSessionLang(null)
+    setShowReport(false)
     setLoading(false)
   }
 

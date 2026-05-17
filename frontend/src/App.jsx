@@ -9,6 +9,7 @@ import Community from './pages/Community'
 import AuthPage from './pages/AuthPage'
 import { LanguageProvider, useLanguage } from './context/LanguageContext'
 import { AuthProvider } from './context/AuthContext'
+import { ChatHistoryProvider } from './context/ChatHistoryContext'
 
 function AppFooter() {
   const { lang } = useLanguage()
@@ -29,6 +30,7 @@ export default function App() {
   return (
     <LanguageProvider>
       <AuthProvider>
+        <ChatHistoryProvider>
         <div className="min-h-screen flex flex-col bg-gray-50">
           <Navbar />
           <main className="flex-1">
@@ -44,6 +46,7 @@ export default function App() {
           </main>
           <AppFooter />
         </div>
+        </ChatHistoryProvider>
       </AuthProvider>
     </LanguageProvider>
   )

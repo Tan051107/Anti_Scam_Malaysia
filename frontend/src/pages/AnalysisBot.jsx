@@ -5,6 +5,7 @@ import RiskGauge from '../components/RiskGauge'
 import ShareModal from '../components/ShareModal'
 import { sendAnalysisMessage, uploadAnalysisImage } from '../services/api'
 import { useLanguage, translations } from '../context/LanguageContext'
+import { useChatHistory } from '../context/ChatHistoryContext'
 
 // ─────────────────────────────────────────────
 // Extracted risk panel content — shared between desktop sidebar and mobile drawer
@@ -73,23 +74,24 @@ function RiskAssessmentContent({ riskData, canShare, onShare, getRiskLevelColor,
 
 export default function AnalysisBot() {
   const { t, lang } = useLanguage()
+  const { analysisState, setAnalysisState, resetAnalysis } = useChatHistory()
 
-  const [messages, setMessages]       = useState(() => [{
-    id: 'welcome',
-    isBot: true,
-    text: translations[lang]?.analysis_welcome ?? translations.en.analysis_welcome,
-    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  }])
+  // Destructure persisted state from context
+  const { messages, sessionId, riskData, lastMessage, lastImageFile } = analysisState
+
+  // Helpers to update individual fields in the context state
+  const setMessages      = (fn) => setAnalysisState((s) => ({ ...s, messages: typeof fn === 'function' ? fn(s.messages) : fn }))
+  const setSessionId     = (v)  => setAnalysisState((s) => ({ ...s, sessionId: v }))
+  const setRiskData      = (v)  => setAnalysisState((s) => ({ ...s, riskData: v }))
+  const setLastMessage   = (v)  => setAnalysisState((s) => ({ ...s, lastMessage: v }))
+  const setLastImageFile = (v)  => setAnalysisState((s) => ({ ...s, lastImageFile: v }))
+
+  // Local-only UI state (no need to persist across navigation)
   const [input, setInput]             = useState('')
   const [loading, setLoading]         = useState(false)
-  const [sessionId, setSessionId]     = useState(null)
-  const [riskData, setRiskData]       = useState({ score: 0, level: 'LOW', confidence: 0, indicators: [] })
   const [attachedFile, setAttachedFile] = useState(null)
   const [error, setError]             = useState(null)
-  const [lastMessage, setLastMessage] = useState('')
-  const [lastImageFile, setLastImageFile] = useState(null)
   const [showShare, setShowShare]     = useState(false)
-  // Risk panel: collapsed by default on mobile/tablet, expanded on desktop
   const [riskPanelOpen, setRiskPanelOpen] = useState(false)
 
   const messagesEndRef = useRef(null)
@@ -106,26 +108,13 @@ export default function AnalysisBot() {
 
     setMessages((prev) => {
       const hasConversation = prev.some((msg) => msg.id !== 'welcome' && !msg.isNotice)
+      if (hasConversation) return prev.filter((msg) => !msg.isNotice)
 
-      // Only update the welcome message text when no real conversation has started yet
-      const updated = hasConversation
-        ? prev
-        : prev.map((msg) =>
-            msg.id === 'welcome' ? { ...msg, text: t('analysis_welcome') } : msg
-          )
-
-      // Once a conversation exists, append a notice pill about the language switch
-      if (!hasConversation) return updated
-
-      const notice = lang === 'ms'
-        ? '🌐 Bahasa ditukar kepada Bahasa Malaysia.\n\nMesej baru akan dibalas dalam Bahasa Malaysia. Mesej sebelumnya kekal dalam bahasa asal.'
-        : '🌐 Language switched to English.\n\nNew messages will be answered in English. Previous messages remain in their original language.'
-
-      const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      return [
-        ...updated,
-        { id: `lang-notice-${Date.now()}`, isBot: true, text: notice, timestamp: ts, isNotice: true },
-      ]
+      return prev
+        .filter((msg) => !msg.isNotice)
+        .map((msg) =>
+          msg.id === 'welcome' ? { ...msg, text: t('analysis_welcome') } : msg
+        )
     })
   }, [lang])
 
@@ -226,17 +215,9 @@ export default function AnalysisBot() {
         {/* LEFT — Chat */}
         <div className="flex-1 flex flex-col min-w-0 lg:border-r lg:border-gray-200">
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-            {messages.map((msg) =>
-              msg.isNotice ? (
-                <div key={msg.id} className="flex justify-center">
-                  <div className="bg-blue-50 border border-blue-200 text-blue-800 text-xs px-4 py-2.5 rounded-xl max-w-sm text-center leading-relaxed whitespace-pre-wrap shadow-sm">
-                    {msg.text}
-                  </div>
-                </div>
-              ) : (
-                <ChatBubble key={msg.id} message={msg.text} isBot={msg.isBot} timestamp={msg.timestamp} imageUrl={msg.imageUrl} />
-              )
-            )}
+            {messages.filter((msg) => !msg.isNotice).map((msg) => (
+              <ChatBubble key={msg.id} message={msg.text} isBot={msg.isBot} timestamp={msg.timestamp} imageUrl={msg.imageUrl} />
+            ))}
             {loading && (
               <div className="flex items-center gap-2 text-gray-400 text-sm">
                 <Loader2 className="w-4 h-4 animate-spin" />

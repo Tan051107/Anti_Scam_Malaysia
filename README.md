@@ -137,6 +137,7 @@ RDS_SECRET_ARN=<ask team lead>
 # Used by Alembic migrations only (sync driver)
 DATABASE_URL=<ask team lead>
 
+
 # ─── JWT ──────────────────────────────────────────────────────
 JWT_SECRET_KEY=<ask team lead — must be same across all instances>
 ACCESS_TOKEN_EXPIRE_MINUTES=480
