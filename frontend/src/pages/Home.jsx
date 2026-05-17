@@ -12,7 +12,7 @@ const RISK_COLORS = {
 }
 
 export default function Home() {
-  const { t, lang } = useLanguage()
+  const { t } = useLanguage()
   const [recentPosts, setRecentPosts] = useState([])
 
   useEffect(() => {
@@ -23,9 +23,7 @@ export default function Home() {
     {
       icon: <MessageSquare className="w-8 h-8" />,
       title: t('nav_analysis'),
-      description: lang === 'ms'
-        ? 'Tampal mesej, URL, nombor telefon atau e-mel yang mencurigakan. AI kami menganalisis petanda penipuan dengan segera.'
-        : 'Paste suspicious messages, URLs, phone numbers, or emails. Our AI analyzes them for scam indicators instantly.',
+      description: t('home_feat_analysis_desc'),
       link: '/analysis',
       color: 'bg-brand-primary',
       badge: 'AI Powered',
@@ -33,9 +31,7 @@ export default function Home() {
     {
       icon: <Play className="w-8 h-8" />,
       title: t('nav_simulator'),
-      description: lang === 'ms'
-        ? 'Latih diri mengenal pasti penipuan dalam persekitaran selamat. Bot kami mensimulasikan senario penipuan Malaysia yang sebenar.'
-        : 'Practice identifying scams in a safe environment. Our bot simulates real Malaysian scam scenarios.',
+      description: t('home_feat_simulator_desc'),
       link: '/simulator',
       color: 'bg-red-600',
       badge: 'Interactive',
@@ -43,9 +39,7 @@ export default function Home() {
     {
       icon: <FileText className="w-8 h-8" />,
       title: t('nav_report'),
-      description: lang === 'ms'
-        ? 'Jana laporan insiden penipuan berstruktur untuk diserahkan kepada PDRM, Bank Negara atau MCMC.'
-        : 'Generate a structured scam incident report to submit to PDRM, Bank Negara, or MCMC.',
+      description: t('home_feat_report_desc'),
       link: '/report',
       color: 'bg-green-600',
       badge: 'Free',
@@ -53,9 +47,7 @@ export default function Home() {
     {
       icon: <Users className="w-8 h-8" />,
       title: t('nav_community'),
-      description: lang === 'ms'
-        ? 'Lihat kes penipuan terkini yang dikongsi oleh rakyat Malaysia. Bersama kita lindungi satu sama lain.'
-        : 'View recent scam cases shared by Malaysians. Together we protect each other.',
+      description: t('home_feat_community_desc'),
       link: '/community',
       color: 'bg-purple-600',
       badge: 'Community',
@@ -63,19 +55,19 @@ export default function Home() {
   ]
 
   const stats = [
-    { value: '56,000+', label: lang === 'ms' ? 'Kes penipuan dilaporkan 2023' : 'Scam cases reported in 2023', icon: <AlertTriangle className="w-5 h-5" /> },
-    { value: 'RM1.2B',  label: lang === 'ms' ? 'Kerugian akibat penipuan 2023' : 'Lost to scams in 2023',       icon: <TrendingUp className="w-5 h-5" /> },
-    { value: '1 in 3',  label: lang === 'ms' ? 'Rakyat Malaysia disasarkan penipu' : 'Malaysians targeted by scams', icon: <Users className="w-5 h-5" /> },
-    { value: '997',     label: lang === 'ms' ? 'Talian kecemasan' : 'Emergency hotline',                        icon: <Phone className="w-5 h-5" /> },
+    { value: '56,000+', label: t('home_stat_cases'),    icon: <AlertTriangle className="w-5 h-5" /> },
+    { value: 'RM1.2B',  label: t('home_stat_loss'),     icon: <TrendingUp className="w-5 h-5" /> },
+    { value: '1 in 3',  label: t('home_stat_targeted'), icon: <Users className="w-5 h-5" /> },
+    { value: '997',     label: t('home_stat_hotline'),  icon: <Phone className="w-5 h-5" /> },
   ]
 
   const scamTypes = [
-    { name: 'Macau Scam',      nameMs: 'Penipuan Macau',     emoji: '📞', desc: lang === 'ms' ? 'Menyamar sebagai polis/pegawai kerajaan' : 'Impersonating police/government officials' },
-    { name: 'Love Scam',       nameMs: 'Penipuan Cinta',     emoji: '💔', desc: lang === 'ms' ? 'Hubungan romantik palsu untuk wang' : 'Fake romantic relationships for money' },
-    { name: 'Investment Scam', nameMs: 'Penipuan Pelaburan', emoji: '📈', desc: lang === 'ms' ? 'Pulangan dijamin palsu crypto/forex' : 'Fake crypto/forex guaranteed returns' },
-    { name: 'Parcel Scam',     nameMs: 'Penipuan Bungkusan', emoji: '📦', desc: lang === 'ms' ? 'Bayaran penghantaran Shopee/Lazada palsu' : 'Fake Shopee/Lazada delivery fees' },
-    { name: 'LHDN Scam',       nameMs: 'Penipuan LHDN',      emoji: '🏛️', desc: lang === 'ms' ? 'Tuntutan pihak berkuasa cukai palsu' : 'Fake tax authority demands' },
-    { name: 'Job Scam',        nameMs: 'Penipuan Kerja',     emoji: '💼', desc: lang === 'ms' ? 'Tawaran kerja palsu memerlukan bayaran' : 'Fake job offers requiring upfront fees' },
+    { nameKey: 'home_scam_macau_name',  descKey: 'home_scam_macau_desc',  emoji: '📞' },
+    { nameKey: 'home_scam_love_name',   descKey: 'home_scam_love_desc',   emoji: '💔' },
+    { nameKey: 'home_scam_invest_name', descKey: 'home_scam_invest_desc', emoji: '📈' },
+    { nameKey: 'home_scam_parcel_name', descKey: 'home_scam_parcel_desc', emoji: '📦' },
+    { nameKey: 'home_scam_lhdn_name',   descKey: 'home_scam_lhdn_desc',   emoji: '🏛️' },
+    { nameKey: 'home_scam_job_name',    descKey: 'home_scam_job_desc',    emoji: '💼' },
   ]
 
   return (
@@ -125,10 +117,10 @@ export default function Home() {
       <section className="py-16 px-4 bg-white">
         <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold text-center text-gray-900 mb-2">
-            {lang === 'ms' ? 'Alat Kami' : 'Our Tools'}
+            {t('home_tools_title')}
           </h2>
           <p className="text-center text-gray-500 mb-10">
-            {lang === 'ms' ? 'Alat Perlindungan Anda' : 'Your Protection Tools'}
+            {t('home_tools_subtitle')}
           </p>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((feature) => (
@@ -148,7 +140,7 @@ export default function Home() {
                 <h3 className="text-lg font-bold text-gray-900 mb-3">{feature.title}</h3>
                 <p className="text-sm text-gray-600">{feature.description}</p>
                 <div className={`mt-4 text-sm font-semibold ${feature.color.replace('bg-', 'text-')} group-hover:underline`}>
-                  {lang === 'ms' ? 'Mulakan →' : 'Get started →'}
+                  {t('home_get_started')}
                 </div>
               </Link>
             ))}
@@ -171,8 +163,8 @@ export default function Home() {
             <div className="text-center py-10 bg-white rounded-2xl border border-gray-200">
               <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
               <p className="text-gray-400 text-sm">{t('recent_scam_empty')}</p>
-              <Link to="/analysis" className="mt-3 inline-block text-brand-primary text-sm font-semibold hover:underline">
-                {lang === 'ms' ? 'Analisis mesej mencurigakan →' : 'Analyze a suspicious message →'}
+              <Link to="/analysis" className="mt-3 inline-block text-blue-600 text-sm font-semibold hover:underline">
+                {t('home_analyze_link')}
               </Link>
             </div>
           ) : (
@@ -205,18 +197,18 @@ export default function Home() {
       <section className="py-16 px-4 bg-white">
         <div className="max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold text-center text-gray-900 mb-2">
-            {lang === 'ms' ? 'Jenis Penipuan Biasa di Malaysia' : 'Common Scams in Malaysia'}
+            {t('home_scam_types_title')}
           </h2>
           <p className="text-center text-gray-500 mb-10">
-            {lang === 'ms' ? 'Kenali untuk melindungi diri anda' : 'Know them to protect yourself'}
+            {t('home_scam_types_subtitle')}
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             {scamTypes.map((scam) => (
-              <div key={scam.name} className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3 shadow-sm hover:shadow-md transition-shadow">
+              <div key={scam.nameKey} className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3 shadow-sm hover:shadow-md transition-shadow">
                 <span className="text-3xl">{scam.emoji}</span>
                 <div>
-                  <div className="font-bold text-gray-900 text-sm">{lang === 'ms' ? scam.nameMs : scam.name}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{scam.desc}</div>
+                  <div className="font-bold text-gray-900 text-sm">{t(scam.nameKey)}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{t(scam.descKey)}</div>
                 </div>
               </div>
             ))}
@@ -228,11 +220,11 @@ export default function Home() {
       <section className="bg-gray-900 py-10 px-4">
         <div className="max-w-3xl mx-auto text-center">
           <h3 className="text-white text-xl font-bold mb-4">
-            {lang === 'ms' ? '🚨 Jika anda mangsa penipuan' : '🚨 If you are a scam victim'}
+            {t('home_emergency_title')}
           </h3>
           <div className="grid sm:grid-cols-3 gap-4 text-sm">
             {[
-              { label: lang === 'ms' ? 'Kecemasan' : 'Emergency', number: '997',           color: 'bg-red-600' },
+              { label: t('home_emergency_label'), number: '997',           color: 'bg-red-600' },
               { label: 'CCID Polis Malaysia',                      number: '03-2610 1222',  color: 'bg-brand-secondary' },
               { label: 'BNM TELELINK',                             number: '1-300-88-5465', color: 'bg-green-700' },
             ].map((item) => (

@@ -5,7 +5,7 @@ import { sendSimulatorMessage, resetSimulator } from '../services/api'
 import { useLanguage } from '../context/LanguageContext'
 
 const INTRO_MESSAGE_EN = {
-  id: 'intro',
+  id: 'intro-en', // Changed from 'intro'
   isBot: true,
   text:
     '⚠️ SIMULATION MODE ⚠️\n\n' +
@@ -16,7 +16,7 @@ const INTRO_MESSAGE_EN = {
 }
 
 const INTRO_MESSAGE_MS = {
-  id: 'intro',
+  id: 'intro-ms', // Changed from 'intro'
   isBot: true,
   text:
     '⚠️ MOD SIMULASI ⚠️\n\n' +
@@ -29,7 +29,9 @@ const INTRO_MESSAGE_MS = {
 export default function ScamSimulator() {
   const { lang, t } = useLanguage()
 
-  const [messages, setMessages] = useState([INTRO_MESSAGE_EN])
+  // Lazy initialiser — reads lang at mount time so navigating here after
+  // switching language on another page shows the correct intro immediately
+  const [messages, setMessages] = useState(() => [lang === 'ms' ? INTRO_MESSAGE_MS : INTRO_MESSAGE_EN])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState(null)
@@ -43,21 +45,15 @@ export default function ScamSimulator() {
   const [sessionLang, setSessionLang] = useState(null)
 
   const messagesEndRef = useRef(null)
-  // Ref to skip the effect on first mount
-  const isFirstRender = useRef(true)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // React to language changes
+  // React to language changes while on this page
+  // isFirstRender guard removed — the lazy useState initialiser handles the
+  // mount case correctly, so this effect only needs to handle live switches
   useEffect(() => {
-    // Skip on initial mount — no language change has happened yet
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
-
     if (!started) {
       // Not yet started — swap the intro message to the new language
       setMessages([lang === 'ms' ? INTRO_MESSAGE_MS : INTRO_MESSAGE_EN])
