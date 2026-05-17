@@ -1,10 +1,9 @@
 # 🛡️ Anti-Scam Malaysia
 
 AI-powered scam detection and education platform for Malaysians.
-Platform pengesanan dan pendidikan penipuan berkuasa AI untuk rakyat Malaysia.
+
 
 **Live:** [https://main.dmk61e1v3b3ne.amplifyapp.com](https://main.dmk61e1v3b3ne.amplifyapp.com)
-**Backend API:** [https://anti-scam-malaysia.duckdns.org/api](https://anti-scam-malaysia.duckdns.org/api)
 
 ---
 
