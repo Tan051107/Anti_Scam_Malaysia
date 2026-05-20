@@ -100,6 +100,13 @@ def _chat_system_prompt(language: str = "en") -> str:
       20-49: very little to go on; assessment is tentative
       0-19: insufficient information to assess
 
+    INDICATOR FORMAT RULES — strictly enforced:
+    - Each indicator must be a short, factual noun phrase describing a scam signal (e.g. "Threat of account closure", "Unsolicited request for OTP", "Suspicious shortened URL").
+    - Each indicator must be 2–8 words. No full sentences, no punctuation at the end.
+    - NEVER include meta-commentary such as "I've reviewed...", "I understand you've provided...", "This text contains...", or any reference to your own analysis process.
+    - NEVER repeat or quote the user's raw input inside an indicator string.
+    - NEVER explain what an indicator is — just name it.
+
     You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
     The JSON must have exactly these fields:
     {{
@@ -157,6 +164,13 @@ def _upload_system_prompt(language: str = "en") -> str:
       50-79: some signals present but message is vague or partial
       20-49: very little to go on; assessment is tentative
       0-19: insufficient information to assess
+
+    INDICATOR FORMAT RULES — strictly enforced:
+    - Each indicator must be a short, factual noun phrase describing a scam signal (e.g. "Threat of account closure", "Unsolicited request for OTP", "Suspicious shortened URL").
+    - Each indicator must be 2–8 words. No full sentences, no punctuation at the end.
+    - NEVER include meta-commentary such as "I've reviewed...", "I understand you've provided...", "This text contains...", or any reference to your own analysis process.
+    - NEVER repeat or quote the user's raw input inside an indicator string.
+    - NEVER explain what an indicator is — just name it.
 
     You MUST respond with ONLY a valid JSON object — no markdown, no code fences, no extra text.
     The JSON must have exactly these fields:
@@ -330,12 +344,14 @@ async def analysis_upload(
     file: UploadFile = File(...),
     language: str = Query("en", description="Response language: en or ms"),
     session_id: str = Query(None, description="Session ID to persist image analysis in chat history"),
+    message: str = Query(None, description="Optional text message to include with the image analysis"),
 ):
     """
     Analyse an uploaded image for scam indicators using Claude Sonnet 4.6 (vision).
     Supports: screenshots of messages, fake bank notices, suspicious QR codes.
     If session_id is provided, the image analysis is stored in chat history so
     follow-up text questions have context.
+    If message is provided, it's included alongside the image for combined analysis.
     """
     allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
     if file.content_type not in allowed_types:
@@ -346,6 +362,12 @@ async def analysis_upload(
 
     image_data = await file.read()
     b64 = base64.b64encode(image_data).decode("utf-8")
+
+    # Build the text prompt — include user's message if provided
+    text_prompt = message.strip() if message and message.strip() else (
+        "Please analyse this image for scam indicators in the Malaysian context. "
+        "Describe what you see and assess whether it is a scam."
+    )
 
     user_turn = {
         "role": "user",
@@ -360,10 +382,7 @@ async def analysis_upload(
             },
             {
                 "type": "text",
-                "text": (
-                    "Please analyse this image for scam indicators in the Malaysian context. "
-                    "Describe what you see and assess whether it is a scam."
-                ),
+                "text": text_prompt,
             },
         ],
     }

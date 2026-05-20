@@ -136,12 +136,18 @@ export default function AnalysisBot() {
 
     if (attachedFile) {
       const previewUrl = URL.createObjectURL(attachedFile)
-      addMessage(`📎 ${attachedFile.name}`, false, previewUrl)
+      const textWithImage = input.trim()
+      if (textWithImage) {
+        addMessage(`📎 ${attachedFile.name}\n${textWithImage}`, false, previewUrl)
+      } else {
+        addMessage(`📎 ${attachedFile.name}`, false, previewUrl)
+      }
       const file = attachedFile
       setAttachedFile(null)
+      setInput('')
       setLoading(true)
       try {
-        const data = await uploadAnalysisImage(file, sessionId, lang)
+        const data = await uploadAnalysisImage(file, sessionId, lang, textWithImage || null)
         if (data.session_id) setSessionId(data.session_id)
         setRiskData({ score: data.risk_score, level: data.risk_level, confidence: data.confidence, indicators: data.indicators })
         setLastMessage(`[Image: ${file.name}]`)

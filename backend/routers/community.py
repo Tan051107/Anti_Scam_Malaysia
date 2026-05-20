@@ -80,7 +80,8 @@ PII_PATTERNS = [
     # URLs: full http(s):// links, www. links, or bare domains with paths
     re.compile(r'^https?://\S*$', re.IGNORECASE),
     re.compile(r'^www\.\S+\.\S*$', re.IGNORECASE),
-    re.compile(r'^[a-zA-Z0-9\-]+\.(com|net|org|io|my|co|info|biz|xyz|top|club|site|online|shop|link|click|live|app|web|tech|store|vip|pro|cc|tv|me|us|uk|sg|id|ph|th|vn)(/\S*)?$'),
+    # Bare domains: word.tld or word.tld/path — match any 2-6 char TLD
+    re.compile(r'^[a-zA-Z0-9\-]+\.[a-zA-Z]{2,6}(/\S*)?$'),
 ]
 
 
@@ -258,13 +259,21 @@ def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None
     """
     try:
         # ── Layer 1: Textract analyze_document ──────────────────────────────
+        # Textract only supports JPEG, PNG, and PDF. Convert other formats to PNG.
+        textract_bytes = image_bytes
+        if content_type not in ("image/jpeg", "image/png", "application/pdf"):
+            img_for_textract = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            buf = io.BytesIO()
+            img_for_textract.save(buf, format="PNG")
+            textract_bytes = buf.getvalue()
+
         textract = boto3.client(
             "textract", region_name=AWS_REGION,
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
         )
         response = textract.analyze_document(
-            Document={"Bytes": image_bytes},
+            Document={"Bytes": textract_bytes},
             FeatureTypes=["FORMS", "TABLES"],
         )
 
@@ -446,8 +455,11 @@ def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None
                 raw = json.loads(r["body"].read())["content"][0]["text"].strip()
                 raw = re.sub(r'^```(?:json)?\s*', '', raw)
                 raw = re.sub(r'\s*```$', '', raw)
-                for token in json.loads(raw):
-                    pii_set.add(token.lower().strip(".,!?;:\"'()[]"))
+                # Extract just the JSON array — model sometimes appends extra text after ]
+                array_match = re.search(r'\[.*?\]', raw, re.DOTALL)
+                if array_match:
+                    for token in json.loads(array_match.group()):
+                        pii_set.add(token.lower().strip(".,!?;:\"'()[]"))
             except Exception as exc:
                 logger.warning(
                     "_censor_image Layer 3 Bedrock call failed — continuing with Layers 1+2 only: %s",
@@ -457,6 +469,35 @@ def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None
         # ── Layer 4: Pillow — draw precise redaction boxes ───────────────────
         pad = 3
 
+        # Build a set of individual PII fragments for substring matching.
+        # When PII spans multiple Textract words (e.g. URL split across lines),
+        # each fragment token should still be flagged.
+        pii_fragments: set = set()
+        for pii_val in pii_set:
+            pii_fragments.add(pii_val)
+            # Also add sub-parts split by common delimiters (space, dot, slash)
+            for part in re.split(r'[\s/\.\-]+', pii_val):
+                cleaned = part.lower().strip(".,!?;:\"'()[]")
+                if cleaned and len(cleaned) >= 4:  # avoid matching tiny fragments
+                    pii_fragments.add(cleaned)
+
+        def _is_pii_token(token: str, word_id: str) -> bool:
+            """Check if a word token should be redacted."""
+            if word_id in kv_value_ids or word_id in regex_flagged_ids:
+                return True
+            if token in pii_fragments:
+                return True
+            # Check if this token is a meaningful part of a known PII value
+            # (handles cases where Textract splits a URL/phone across lines)
+            # Require minimum 4 chars AND the token must appear as a distinct segment
+            # (separated by dots, slashes, dashes, or at start/end) — not as a random substring
+            if len(token) >= 4:
+                for pii_val in pii_set:
+                    # Check if token appears as a segment boundary (not embedded in a word)
+                    if re.search(r'(?:^|[./\-\s])' + re.escape(token) + r'(?:$|[./\-\s])', pii_val):
+                        return True
+            return False
+
         def _redact_frame(frame: "Image.Image") -> "Image.Image":
             """Apply redaction boxes to a single Pillow frame."""
             frame = frame.convert("RGBA")
@@ -464,7 +505,7 @@ def _censor_image(image_bytes: bytes, content_type: str, pii_values: list = None
             iw, ih = frame.size
             for word in words:
                 token = word["text"].lower().strip(".,!?;:\"'()[]")
-                if token in pii_set or word["id"] in kv_value_ids or word["id"] in regex_flagged_ids:
+                if _is_pii_token(token, word["id"]):
                     x1 = max(0,  int(word["left"] * iw) - pad)
                     y1 = max(0,  int(word["top"]  * ih) - pad)
                     x2 = min(iw, int((word["left"] + word["width"])  * iw) + pad)

@@ -90,11 +90,12 @@ export async function sendAnalysisMessage(message, sessionId = null, language = 
   return res.data
 }
 
-export async function uploadAnalysisImage(file, sessionId = null, language = 'en') {
+export async function uploadAnalysisImage(file, sessionId = null, language = 'en', message = null) {
   const formData = new FormData()
   formData.append('file', file)
   const params = new URLSearchParams({ language })
   if (sessionId) params.append('session_id', sessionId)
+  if (message) params.append('message', message)
   const res = await api.post(`/analysis/upload?${params.toString()}`, formData, {
     headers: { 'Content-Type': undefined },  // let axios set multipart + boundary automatically
   })
@@ -169,8 +170,10 @@ export async function getMyPosts(limit = 20, offset = 0, sort = 'newest') {
 export async function createCommunityPost(formData) {
   // Set Content-Type to undefined so axios auto-sets multipart/form-data with correct boundary
   // while still preserving the Authorization header from defaults
+  // Extended timeout: image posts go through Textract + Bedrock PII pipeline which can take 60s+
   const res = await api.post('/community/posts', formData, {
     headers: { 'Content-Type': undefined },
+    timeout: 120000,  // 2 minutes for image processing pipeline
   })
   return res.data
 }

@@ -185,7 +185,7 @@ function PostCard({ post, onDelete, onUpvote, currentUser, lang, t }) {
             {(showAllIndicators ? post.indicators : post.indicators.slice(0, 4)).map((ind, i) => (
               <span key={i} className="text-xs bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                <span className="line-clamp-1 max-w-[180px]">{ind}</span>
+                <span className="line-clamp-1 md:line-clamp-none max-w-[180px] md:max-w-none">{ind}</span>
               </span>
             ))}
             {post.indicators.length > 4 && (
