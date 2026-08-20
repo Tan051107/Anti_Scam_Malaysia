@@ -9,7 +9,9 @@ load_dotenv()
 config = context.config
 
 # Build sync psycopg2 URL for Alembic (strip SSL query params — handled via connect_args)
-db_url = os.getenv("DATABASE_URL", "")
+db_url = os.getenv("DATABASE_URL", "").strip()
+if not db_url:
+    raise RuntimeError("DATABASE_URL must be set before running Alembic migrations.")
 db_url = db_url.split("?")[0]  # remove query string
 if db_url.startswith("postgresql+asyncpg://"):
     db_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
@@ -27,7 +29,7 @@ import models.orm  # noqa: F401
 
 target_metadata = Base.metadata
 
-SSL_CERT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "global-bundle.pem")
+SSL_CERT = os.getenv("RDS_SSL_CERT", "").strip()
 
 
 def run_migrations_offline() -> None:
@@ -43,7 +45,9 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     connect_args = {}
-    if os.path.exists(SSL_CERT):
+    if SSL_CERT:
+        if not os.path.isfile(SSL_CERT):
+            raise RuntimeError(f"RDS_SSL_CERT does not exist: {SSL_CERT}")
         connect_args = {
             "sslmode": "verify-full",
             "sslrootcert": SSL_CERT,

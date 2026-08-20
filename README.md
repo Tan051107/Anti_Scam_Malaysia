@@ -3,7 +3,8 @@
 AI-powered scam detection and education platform for Malaysians.
 
 
-**Live:** [https://main.dmk61e1v3b3ne.amplifyapp.com](https://main.dmk61e1v3b3ne.amplifyapp.com)
+To deploy your own instance, configure the backend and frontend `.env` files
+described below with your own AWS resources and API URL.
 
 ---
 
@@ -31,7 +32,7 @@ Anti_Scam_Malaysia/
 │   │   ├── components/        # Navbar, ChatBubble, RiskGauge, ShareModal, ConfirmDialog
 │   │   ├── context/           # AuthContext (with token refresh), LanguageContext (EN/MS)
 │   │   └── services/api.js    # Axios instance with 401 auto-refresh interceptor
-│   ├── .env.production        # VITE_API_BASE_URL for Amplify build
+│   ├── .env.example           # Frontend configuration template
 │   └── package.json
 ├── backend/                   # Python FastAPI
 │   ├── routers/
@@ -106,46 +107,26 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Create `backend/.env`** with the following (get values from team lead):
+Copy the configuration template, then replace every `your_...` value with
+credentials and AWS resources you control:
 
-```env
-# ─── AWS Credentials ──────────────────────────────────────────
-AWS_ACCESS_KEY_ID=<ask team lead>
-AWS_SECRET_ACCESS_KEY=<ask team lead>
-AWS_REGION=us-east-1
+```bash
+# Windows PowerShell
+Copy-Item .env.example .env
 
-# ─── Bedrock ──────────────────────────────────────────────────
-BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
-
-# ─── Bedrock Guardrails ───────────────────────────────────────
-# Analysis bot guardrail (scam message analysis)
-ANALYSIS_GUARDRAIL_ID=<ask team lead>
-ANALYSIS_GUARDRAIL_VERSION=4
-
-# Simulator guardrail (scam chat simulator)
-SIMULATOR_GUARDRAIL_ID=<ask team lead>
-SIMULATOR_GUARDRAIL_VERSION=1
-
-# ─── RDS PostgreSQL ───────────────────────────────────────────
-# Password is fetched automatically from Secrets Manager at startup
-RDS_HOST=anti-scam-db.c6r4gac2i011.us-east-1.rds.amazonaws.com
-RDS_PORT=5432
-RDS_DB=postgres
-RDS_USER=postgres
-RDS_SECRET_ARN=<ask team lead>
-
-# Used by Alembic migrations only (sync driver)
-DATABASE_URL=<ask team lead>
-
-
-# ─── JWT ──────────────────────────────────────────────────────
-JWT_SECRET_KEY=<ask team lead — must be same across all instances>
-ACCESS_TOKEN_EXPIRE_MINUTES=480
-REFRESH_TOKEN_EXPIRE_DAYS=7
-
-# ─── S3 ───────────────────────────────────────────────────────
-S3_BUCKET_NAME=anti-scam-malaysia-bucket
+# macOS/Linux
+cp .env.example .env
 ```
+
+`JWT_SECRET_KEY` must be a long, unique random value and must remain the same
+across all instances of one deployment. `CORS_ORIGINS` must list the URL(s) of
+the frontend that may call your backend, separated by commas.
+
+For the database, set `DATABASE_URL` to your PostgreSQL connection URL. This
+same value is used by the application and Alembic migrations. If you prefer
+AWS Secrets Manager, leave `DATABASE_URL` blank and provide the `RDS_*`
+settings instead; the application will retrieve the password from
+`RDS_SECRET_ARN`. Alembic still requires `DATABASE_URL` when running migrations.
 
 **Run database migrations:**
 
@@ -188,21 +169,26 @@ npm run dev
 
 Frontend: **http://localhost:5173**
 
-The Vite dev server proxies `/api` requests to `http://localhost:8000` automatically.
+Copy the frontend template before starting the development server:
 
-For production builds (Amplify), set the environment variable:
+```bash
+# Windows PowerShell
+Copy-Item .env.example .env
+
+# macOS/Linux
+cp .env.example .env
 ```
-VITE_API_BASE_URL=https://anti-scam-malaysia.duckdns.org/api
-```
+
+Set `VITE_API_PROXY_TARGET` to the backend URL for local development. For a
+production build, set `VITE_API_BASE_URL` to your deployed backend API URL.
 
 ---
 
-### Step 4 — Amplify deployment (frontend)
+### Step 4 — Frontend deployment
 
-1. In **Amplify Console → Environment variables**, add:
-   - `VITE_API_BASE_URL` = `https://anti-scam-malaysia.duckdns.org/api`
-2. In **Amplify Console → Rewrites and redirects**, add:
-   - Source: `/<*>` → Target: `/index.html` → Type: `200` (required for React Router)
+Set `VITE_API_BASE_URL` in your hosting provider's build environment to your
+public backend API URL. If your host serves a single-page app, add a rewrite
+from unknown routes to `/index.html` for React Router.
 
 ---
 

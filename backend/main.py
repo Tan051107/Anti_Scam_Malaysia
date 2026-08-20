@@ -20,6 +20,12 @@ import models.orm  # noqa: F401 — ensure ORM models are registered on Base.met
 load_dotenv()
 
 
+def _get_cors_origins() -> list[str]:
+    """Return the explicitly configured frontend origins."""
+    raw_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+
 # ─────────────────────────────────────────────
 # Lifespan — create DB tables on startup
 # ─────────────────────────────────────────────
@@ -50,7 +56,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # In production, restrict to your frontend domain
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

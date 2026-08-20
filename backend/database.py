@@ -1,108 +1,108 @@
 # -*- coding: utf-8 -*-
-"""
-Database connection and session management.
-Uses SQLAlchemy async engine with asyncpg driver for Amazon RDS PostgreSQL.
+"""Database connection and session management.
 
-Password is fetched from AWS Secrets Manager at startup so it never needs
-to be stored in .env or committed to source control.
+Set ``DATABASE_URL`` for a direct PostgreSQL connection. Alternatively, set
+the RDS variables plus ``RDS_SECRET_ARN`` to retrieve the password from AWS
+Secrets Manager. No deployment-specific database settings are stored here.
 """
 
 import json
 import os
+import ssl
+from urllib.parse import quote_plus
+
 import boto3
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
 from dotenv import load_dotenv
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 load_dotenv()
 
-# ─────────────────────────────────────────────
-# Config
-# ─────────────────────────────────────────────
 
-RDS_HOST     = os.getenv("RDS_HOST", "anti-scam-db.c6r4gac2i011.us-east-1.rds.amazonaws.com")
-RDS_PORT     = os.getenv("RDS_PORT", "5432")
-RDS_DB       = os.getenv("RDS_DB", "postgres")
-RDS_USER     = os.getenv("RDS_USER", "postgres")
-RDS_SECRET   = os.getenv(
-    "RDS_SECRET_ARN",
-    "arn:aws:secretsmanager:us-east-1:037427723047:secret:rds!db-ea21ed4f-c3d6-4285-b3df-b1e6023b8477-SZ2WJ8",
-)
-AWS_REGION   = os.getenv("AWS_REGION", "us-east-1")
-SSL_CERT     = os.path.join(os.path.dirname(__file__), "global-bundle.pem")
+def _required(name: str) -> str:
+    """Return a required setting or explain how to configure the backend."""
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(
+            f"{name} must be set in the backend environment. "
+            "Copy .env.example to .env and configure the database."
+        )
+    return value
 
 
-# ─────────────────────────────────────────────
-# Fetch password from Secrets Manager
-# ─────────────────────────────────────────────
+def _async_database_url(url: str) -> str:
+    """Convert common PostgreSQL URLs to SQLAlchemy's asyncpg dialect."""
+    if url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + url.removeprefix("postgres://")
+    if url.startswith("postgresql+asyncpg://"):
+        return url
+    if url.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + url.removeprefix("postgresql://")
+    if url.startswith("postgresql+psycopg2://"):
+        return "postgresql+asyncpg://" + url.removeprefix("postgresql+psycopg2://")
+    raise RuntimeError("DATABASE_URL must be a PostgreSQL connection URL.")
+
 
 def _get_db_password() -> str:
     """Retrieve the RDS password from AWS Secrets Manager."""
-    sm = boto3.client(
+    secret_arn = _required("RDS_SECRET_ARN")
+    region = _required("AWS_REGION")
+    client = boto3.client(
         "secretsmanager",
-        region_name=AWS_REGION,
+        region_name=region,
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
     )
-    secret = sm.get_secret_value(SecretId=RDS_SECRET)["SecretString"]
-    return json.loads(secret)["password"]
+    secret = json.loads(client.get_secret_value(SecretId=secret_arn)["SecretString"])
+    password = secret.get("password")
+    if not password:
+        raise RuntimeError("The AWS secret must contain a non-empty 'password' field.")
+    return password
 
 
-# ─────────────────────────────────────────────
-# Build async engine
-# ─────────────────────────────────────────────
+def _rds_database_url() -> str:
+    """Build an async PostgreSQL URL from RDS settings and a managed secret."""
+    host = _required("RDS_HOST")
+    port = _required("RDS_PORT")
+    database = _required("RDS_DB")
+    user = _required("RDS_USER")
+    password = quote_plus(_get_db_password())
+    return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
+
+
+def _ssl_connect_args() -> dict:
+    """Build SSL options only when a certificate path is explicitly configured."""
+    certificate = os.getenv("RDS_SSL_CERT", "").strip()
+    if not certificate:
+        return {}
+    if not os.path.isfile(certificate):
+        raise RuntimeError(f"RDS_SSL_CERT does not exist: {certificate}")
+    return {"ssl": ssl.create_default_context(cafile=certificate)}
+
 
 def _build_engine():
-    password = _get_db_password()
-
-    # URL-encode special characters in password
-    from urllib.parse import quote_plus
-    encoded_password = quote_plus(password)
-
-    url = (
-        f"postgresql+asyncpg://{RDS_USER}:{encoded_password}"
-        f"@{RDS_HOST}:{RDS_PORT}/{RDS_DB}"
-    )
-
-    # SSL connect args for asyncpg
-    ssl_args = {}
-    if os.path.exists(SSL_CERT):
-        import ssl
-        ssl_ctx = ssl.create_default_context(cafile=SSL_CERT)
-        ssl_args = {"ssl": ssl_ctx}
-
+    direct_url = os.getenv("DATABASE_URL", "").strip()
+    url = _async_database_url(direct_url) if direct_url else _rds_database_url()
     return create_async_engine(
         url,
         echo=False,
         pool_size=10,
         max_overflow=20,
         pool_pre_ping=True,
-        connect_args=ssl_args,
+        connect_args=_ssl_connect_args(),
     )
 
 
 engine = _build_engine()
+AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
-
-
-# ─────────────────────────────────────────────
-# Base class for all ORM models
-# ─────────────────────────────────────────────
 
 class Base(DeclarativeBase):
     pass
 
 
-# ─────────────────────────────────────────────
-# FastAPI dependency — yields a DB session per request
-# ─────────────────────────────────────────────
-
 async def get_db():
+    """Yield one transactional database session per request."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
