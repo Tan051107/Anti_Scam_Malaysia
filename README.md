@@ -253,36 +253,3 @@ Text content is also censored via Bedrock with fallback regex covering: names, I
 | `post_upvotes` | Upvote records (unique per user per post) |
 | `incident_reports` | Formal scam incident reports from the Report Generator |
 | `alembic_version` | Alembic migration tracking |
-
----
-
-## Malaysian Scam Scenarios Covered
-
-| Scam Type | Bahasa Malaysia |
-|-----------|----------------|
-| Macau Scam | Penipuan Macau |
-| Love Scam | Penipuan Cinta |
-| Investment Scam (Crypto/Forex) | Penipuan Pelaburan |
-| Parcel Delivery Scam | Penipuan Bungkusan |
-| LHDN Tax Scam | Penipuan LHDN |
-| Bank Impersonation (Maybank/CIMB) | Peniruan Bank |
-| Online Shopping Scam | Penipuan Beli-belah |
-| Job Scam | Penipuan Kerja |
-
----
-
-## Emergency Contacts / Hubungi Kecemasan
-
-| Agency | Number |
-|--------|--------|
-| 🚨 Emergency / Kecemasan | **997** |
-| CCID Polis Malaysia | **03-2610 1222** |
-| BNM TELELINK | **1-300-88-5465** |
-| MCMC Aduan | **aduan.mcmc.gov.my** |
-| Semak Mule | **www.semakmule.rmp.gov.my** |
-
----
-
-## License
-
-MIT — Built for educational purposes to protect Malaysians from scams.
